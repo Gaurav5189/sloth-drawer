@@ -3,10 +3,10 @@
 > Update this file after every completed task and whenever the working file changes. Newest entries on top. Keep it short and factual.
 
 ## Current Status
-- **Phase:** 0 — Setup & harness → **complete**; moving to Phase 1 — Corpus & extraction engine
-- **Working on:** corpus collection (10–12 text-based manual PDFs, one device class)
-- **Files/modules in progress:** none — Phase 0 landed and is committed
-- **Blocked / waiting for answer:** none. Tiger Cloud auth is refreshed and the service is writable
+- **Phase:** 1 — Corpus & extraction engine → **complete**; Phase 2 (cards, state, report) is next
+- **Working on:** —
+- **Files/modules in progress:** none — Phase 1 landed and is committed
+- **Blocked / waiting for answer:** none
 
 ## Completed
 - [x] Planning: PRD, ARCHITECTURE, RULES, PHASES, DESIGN written
@@ -25,6 +25,24 @@
 - [x] **Phase 0** — `bench/README.md` written (how to re-run every published number)
 - [x] **Phase 0** — Tiger Cloud: `tiger auth login` refreshed, service URL fetched, extensions installed
 - [x] `ruff check .` / `ruff format --check .` clean, `mypy` clean, `pytest` green
+- [x] **Phase 1** — **corpus collected: 19 text-based air-purifier manuals** across 7 brands
+      (Coway, Levoit, Honeywell, Blueair, Medify, Winix, +1 skipped Airthereal). 31 candidates fetched,
+      12 skipped and recorded with reasons (`data/corpus_sources.md`): 4 image-only scans, 6 hosts
+      returned HTTP 403, 1 unreadable by pypdf, 1 single-page pypdf failure recovered per-page
+- [x] **Phase 1** — `corpus/ingest.py` (pypdf → `Page`, per-page error tolerance so one broken page
+      does not lose a manual, `sha256` per manual for the vector index)
+- [x] **Phase 1** — `corpus/chunk.py` (verbatim page slices with page no + section heading; a new
+      heading starts a new chunk so a citation's section always matches its text)
+- [x] **Phase 1** — `corpus/prefilter.py` (pure regex scoring + **candidate sentences**: the code
+      enumerates the interval-bearing sentences so every interval gets exactly one model call)
+- [x] **Phase 1** — `extract/ollama.py` (stdlib client, fixed request shape, timeout/backoff/retry,
+      token accounting), `extract/prompts.py` (both prompts + JSON schemas, `PROMPT_VERSION`),
+      `extract/triage.py`, `extract/extractor.py` (one fact per call, one repair attempt)
+- [x] **Phase 1** — `extract/verify.py` — **THE VERIFIER**: locate → expand → re-parse → compare,
+      with the four rejection reasons and line-aware sentence expansion
+- [x] **Phase 1** — `retrieval/base.py` + `retrieval/local.py` (SQLite FTS5, trigram, `bm25()`)
+- [x] **Phase 1** — `pipeline.py` + `sloth-drawer scan` — full corpus run, results in `out/scan-phase1.txt`
+
 
 ## Decisions Log
 | Date | Decision | Reason |
@@ -58,8 +76,18 @@
 | 2026-10-22 | The Tiger service's **master password was reset** (`tiger service update-password`) | The password in the OS keyring no longer authenticated (`FATAL: password authentication failed for user "tsdbadmin"`), so the service was unusable from the CLI and from the app. A fresh random password was generated, stored in the keyring, and the DSN written to the gitignored `.env` |
 | 2026-10-22 | The app's Postgres objects live in a dedicated **`sloth` schema**, not `public` | Keeps `manual_chunks` off the default search path and makes the "the cloud holds only chunk text" boundary visible in the schema itself. It also forces the BM25 index name to be schema-qualified, which is the correct form anyway |
 | 2026-10-22 | `RULES.md` §1.3 and `ARCHITECTURE.md` §4.4b **corrected**: the BM25 index name in `to_bm25query` must be schema-qualified; `CREATE INDEX` takes an unqualified index name; the one-argument `to_bm25query(text)` overload is a trap | The original text was wrong on two of these and would have cost an afternoon in Phase 4. All four rules were measured against the live service (PG 18.6, pg_textsearch 1.5.1), not read from documentation |
+| 2026-10-22 | **Corpus device class = air purifiers** | The bench harness, `DESIGN.md`'s A6 mockup and `PLAN.md`'s post outline already speak about air purifiers; switching class would contradict all three. Supply of text-based PDFs is also excellent (19 usable from 31 candidates) |
+| 2026-10-22 | **`candidate_sentences`**: the code enumerates interval-bearing sentences and builds one short excerpt per sentence; the model is called once per excerpt | "One fact per call" alone finds only one interval per chunk. Making the *code* choose the candidates keeps C5 (one excerpt per call) and RULES §4.3 (the model never chooses the next chunk) while finding every interval. The model still points; the code still recomputes |
+| 2026-10-22 | **The excerpt keeps one neighbouring sentence on each side** | Context is what lets the model name the task ("Pre-Carbon filter replacement" not "filter"), and it keeps the quote inside a readable stretch. A narrower window found fewer, vaguer task labels |
+| 2026-10-22 | **Interval unit conversions are stated in the prompt AND implemented in the code, from one table** (30 days = 1 month, 4 weeks = 1 month, 12 months = 1 year, 720 hours = 1 month; ranges take the midpoint) | If the model's rule and the code's rule differ, every "every 90 days" becomes a false REPAIR. `prompts.CONVERSION_RULE` and `verify.MONTHS_PER_UNIT` must stay in step — pinned by tests |
+| 2026-10-22 | **`Interval` carries `value`/`unit` as the manual states them, plus `months` for scheduling** | The card shows the manufacturer's own number in the manufacturer's own unit ("2 weeks", not "0.5 months"); the schedule is computed from months. Ranges keep their range form ("3-6 months") |
+| 2026-10-22 | **Sentence expansion is line-aware**: `_TERMINATOR` skips abbreviations ("Part No."), a short non-terminating line acts as a boundary (headings, table rows), and over-long "sentences" fall back to a ±200-char window | A naive "."-based split cut "The Pre-Carbon filter (Part No." off its own sentence and ran back through headings to the manual's title. All three behaviours are pinned by tests |
+| 2026-10-22 | **`prefilter._flatten` and `verify.normalise` must stay identical** (dashes, curly quotes, digit commas, dash-spaces, "six(6)") | A real manual writes "2–4 weeks", "1 - 2 months" and "six(6) months"; the model returns "1-2 months". If the two flattenings drift, a found interval cannot be verified or a real quote is rejected. `verify.py` cannot import `prefilter` (purity), so a test pins them together |
+| 2026-10-22 | **Triage is opt-in (`--triage`), not the default** | The pre-filter already removes ~95% of chunks, so the gate saves almost nothing on this corpus, and a weak 270M "no" loses intervals the extractor would have verified. A triage *failure* now falls through to extraction rather than losing the candidate |
+| 2026-10-22 | **Per-page extraction tolerance in `ingest`**: a page that fails is recorded, the manual keeps its other pages | `medify-ma-25` and `winix-a230` each have a page pypdf cannot parse; whole-file skipping would have lost two manuals that are 90% readable |
+| 2026-10-22 | **`pipeline.py` added** (not in the original ARCHITECTURE file tree) | The scan orchestration — ingest → chunk → prefilter → triage → extract → verify, with the failure policy at each stage — needs a home that is neither the CLI nor any one stage. Noted for the ARCHITECTURE file tree |
 
-## Measured on the reference box (2026-10-22)
+## Measured on the reference box (2026-10-23)
 | Thing | Value | How it was measured |
 |---|---|---|
 | SQLite | **3.54.0**, FTS5 enabled, **`trigram` tokenizer works** | `sqlite3 :memory: "CREATE VIRTUAL TABLE t USING fts5(c, tokenize='trigram')"` + a `DX-CF14` match |
@@ -67,11 +95,10 @@
 | Python | 3.14.8 (uv created the venv with 3.14.7) | `python3 --version` |
 | Ollama | 0.40.7, CPU only, 4 cores / 7.5 GB | `ollama serve` log |
 | Postgres (Tiger Cloud) | **18.6**, `pg_textsearch` 1.5.1, `vectorscale` 0.9.0, `vector` 0.8.7 | `tiger db query "SELECT version()"` + `pg_extension` |
+| Corpus scan (19 manuals) | **771 s (12:51)**, 63 candidates, 22401 tokens, **22 PASS / 13 REPAIR / 7 REJECT / 21 SKIP** | `uv run sloth-drawer scan data/manuals` — wall-clock with Ollama running |
 
 ## Open Questions
-- Confirm the device class for the corpus (air purifiers vs robot vacuums vs coffee machines) — decided Fri morning at the corpus checkpoint.
-- Which Tiger Cloud schema the app points at — **decided: the dedicated `sloth` schema** on `db-75294` (DEV).
-- Does the reference corpus support a two-device-class demo? — only if time allows after the report.
+- Phase 2 scope: the card layout and the `done` command are designed; the web UI is the stretch target.
 
 ## Known Issues / Tech Debt
 - The 291 MB triage model (`gemma3:270m`) **fails** the extraction task (claimed 1 month, cited a sentence with no interval). It is only ever used for the yes/no gate. Do not promote it to extractor without re-running `bench/`.
@@ -84,13 +111,12 @@
 - `~/.config/tiger/config.yaml` had `service_id: db-75294` (a **name**); the CLI requires an **ID**. Changed to `vhr6dh202x`. The `read_only: prod` key was left alone — it only affects PROD-tagged services, and this one is DEV.
 
 ## Next Up
-1. **Phase 1 — the corpus.** Collect 10–12 text-based manual PDFs in one device class into
-   `data/manuals/`. Record every skipped file and why. **Hard checkpoint: if fewer than 8 usable by
-   Fri 18:00, switch device class.**
-2. `corpus/ingest.py` → `corpus/chunk.py` → `corpus/prefilter.py`, then `extract/{ollama,prompts,triage,
-   extractor,verify}.py` and `retrieval/{base,local}.py`.
-3. `tiger db uri --with-password` is the way to refresh the DSN if the password changes again; the
+1. **Phase 2** — `storage/db.py` + `storage/service_log.py`, `data/devices.toml` is already written,
+   `render/{theme,card_html,card_text}.py`, `report/build.py`, the `card`/`done`/`report` subcommands.
+2. `tiger db uri --with-password` is the way to refresh the DSN if the password changes again; the
    current one lives in the gitignored `.env`.
+3. Phase 4 wires the retriever into the scan and runs the backend parity test — deferred until both
+   backends exist, so parity can actually be measured rather than asserted.
 
 
 ## Update Template

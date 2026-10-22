@@ -1,0 +1,160 @@
+# The device registry — Sloth Drawer
+#
+# Hand-edited, read with stdlib `tomllib`. This file is the single source of
+# truth for which physical thing a manual belongs to (RULES.md C10: the model
+# never invents a device).
+#
+# `manual` is a filename relative to data/manuals/. The manuals themselves are
+# gitignored; data/corpus_sources.md records where each one came from.
+
+[[device]]
+slug = "coway-airmega-100"
+name = "Coway Airmega 100"
+manufacturer = "Coway"
+model = "Airmega 100"
+category = "air-purifier"
+manual = "coway-airmega-100.pdf"
+
+[[device]]
+slug = "coway-airmega-400s"
+name = "Coway Airmega 400S"
+manufacturer = "Coway"
+model = "Airmega 400S/400/300S/300"
+category = "air-purifier"
+manual = "coway-airmega-400s.pdf"
+
+[[device]]
+slug = "levoit-core-200s-plus"
+name = "Levoit Core 200S Plus"
+manufacturer = "Levoit"
+model = "Core 200S-P"
+category = "air-purifier"
+manual = "levoit-core-200s-plus.pdf"
+
+[[device]]
+slug = "levoit-essential-200s"
+name = "Levoit Essential 200S"
+manufacturer = "Levoit"
+model = "Essential 200S"
+category = "air-purifier"
+manual = "levoit-essential-200s.pdf"
+
+[[device]]
+slug = "honeywell-hpa3000"
+name = "Honeywell PowerPlus HPA3100"
+manufacturer = "Honeywell"
+model = "HPA3100/HPA3200/HPA3300"
+category = "air-purifier"
+manual = "honeywell-hpa3000.pdf"
+
+[[device]]
+slug = "honeywell-insight-hpa5100"
+name = "Honeywell InSight HPA5100"
+manufacturer = "Honeywell"
+model = "HPA5100/HPA5150/HPA5200/HPA5220/HPA5250/HPA5300"
+category = "air-purifier"
+manual = "honeywell-insight-hpa5100.pdf"
+
+[[device]]
+slug = "honeywell-hpa8350"
+name = "Honeywell HPA8350"
+manufacturer = "Honeywell"
+model = "HPA8350"
+category = "air-purifier"
+manual = "honeywell-hpa8350.pdf"
+
+[[device]]
+slug = "blueair-blue-pure-211a"
+name = "Blueair Blue Pure 211+ Auto"
+manufacturer = "Blueair"
+model = "Blue Pure 211+ Auto"
+category = "air-purifier"
+manual = "blueair-blue-pure-211a.pdf"
+
+[[device]]
+slug = "blueair-health-protect-7300"
+name = "Blueair HealthProtect 7300"
+manufacturer = "Blueair"
+model = "HealthProtect 7300/7400/7500/7700"
+category = "air-purifier"
+manual = "blueair-health-protect-7300.pdf"
+
+[[device]]
+slug = "medify-ma-112"
+name = "Medify MA-112"
+manufacturer = "Medify"
+model = "MA-112"
+category = "air-purifier"
+manual = "medify-ma-112.pdf"
+
+[[device]]
+slug = "medify-ma-25"
+name = "Medify MA-25"
+manufacturer = "Medify"
+model = "MA-25"
+category = "air-purifier"
+manual = "medify-ma-25.pdf"
+
+[[device]]
+slug = "medify-ma-40"
+name = "Medify MA-40"
+manufacturer = "Medify"
+model = "MA-40"
+category = "air-purifier"
+manual = "medify-ma-40.pdf"
+
+[[device]]
+slug = "medify-ma-14"
+name = "Medify MA-14"
+manufacturer = "Medify"
+model = "MA-14"
+category = "air-purifier"
+manual = "medify-ma-14.pdf"
+
+[[device]]
+slug = "winix-5500"
+name = "Winix 5500-2"
+manufacturer = "Winix"
+model = "5500-2"
+category = "air-purifier"
+manual = "winix-5500.pdf"
+
+[[device]]
+slug = "winix-6300"
+name = "Winix 6300-2"
+manufacturer = "Winix"
+model = "6300-2"
+category = "air-purifier"
+manual = "winix-6300.pdf"
+
+[[device]]
+slug = "winix-a230"
+name = "Winix A230/A231"
+manufacturer = "Winix"
+model = "A230/A231"
+category = "air-purifier"
+manual = "winix-a230.pdf"
+
+[[device]]
+slug = "winix-am90"
+name = "Winix AM90"
+manufacturer = "Winix"
+model = "AM90"
+category = "air-purifier"
+manual = "winix-am90.pdf"
+
+[[device]]
+slug = "winix-c545"
+name = "Winix C545"
+manufacturer = "Winix"
+model = "C545"
+category = "air-purifier"
+manual = "winix-c545.pdf"
+
+[[device]]
+slug = "winix-c610"
+name = "Winix C610"
+manufacturer = "Winix"
+model = "C610"
+category = "air-purifier"
+manual = "winix-c610.pdf"

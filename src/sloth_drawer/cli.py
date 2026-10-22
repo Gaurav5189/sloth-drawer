@@ -11,6 +11,7 @@ import argparse
 import json
 import logging
 import sys
+from pathlib import Path
 
 from sloth_drawer import __version__
 from sloth_drawer.config import Config, load_config
@@ -22,7 +23,13 @@ from sloth_drawer.errors import (
     ConfigError,
     SlothDrawerError,
 )
-from sloth_drawer.models import check_ollama, is_available, model_registry
+from sloth_drawer.models import (
+    DEFAULT_EXTRACTOR,
+    DEFAULT_TRIAGE,
+    check_ollama,
+    is_available,
+    model_registry,
+)
 
 LOGGER = logging.getLogger("sloth_drawer")
 
@@ -49,7 +56,108 @@ def build_parser() -> argparse.ArgumentParser:
     models.add_argument("--json", action="store_true", help="machine-readable output")
     models.set_defaults(handler=_cmd_models)
 
+    scan = subcommands.add_parser(
+        "scan",
+        help="read a directory of manual PDFs and print the verified intervals",
+    )
+    scan.add_argument("directory", help="the folder holding the manual PDFs")
+    scan.add_argument(
+        "--model",
+        default=DEFAULT_EXTRACTOR,
+        help=f"the extraction model (default: {DEFAULT_EXTRACTOR})",
+    )
+    scan.add_argument(
+        "--triage-model",
+        default=DEFAULT_TRIAGE,
+        help=f"the triage model (default: {DEFAULT_TRIAGE})",
+    )
+    scan.add_argument(
+        "--triage",
+        action="store_true",
+        help=(
+            "gate candidates through the small triage model first. Off by default: "
+            "the pre-filter already removes most chunks, and a weak gate can lose "
+            "intervals the extractor would have found"
+        ),
+    )
+    scan.add_argument(
+        "--threshold",
+        type=int,
+        default=2,
+        help="the pre-filter score a chunk must reach to reach the model",
+    )
+    scan.add_argument(
+        "--keep-alive",
+        default=None,
+        help="how long Ollama keeps the model loaded (e.g. 5m, or 0 to unload)",
+    )
+    scan.set_defaults(handler=_cmd_scan)
+
     return parser
+
+
+def _cmd_scan(args: argparse.Namespace, config: Config) -> int:
+    """Read a folder of manuals and print every interval the verifier accepted."""
+    from sloth_drawer.pipeline import scan_corpus
+
+    directory = Path(args.directory)
+    if not directory.is_dir():
+        raise ConfigError(f"Manual directory not found: {directory}")
+
+    result = scan_corpus(
+        directory,
+        config=config,
+        model=args.model,
+        triage_model=args.triage_model,
+        use_triage=args.triage,
+        threshold=args.threshold,
+        keep_alive=args.keep_alive,
+    )
+
+    for skipped in result.skipped:
+        print(f"skipped  {skipped}", file=sys.stderr)
+
+    counts = result.counts()
+    print()
+    print(f"{'MANUAL':<34} {'PAGE':>5}  {'VERDICT':<8} {'INTERVAL':<14} TASK")
+    print("-" * 100)
+    for candidate in result.candidates:
+        if not candidate.verdict.accepted:
+            continue
+        interval = candidate.verdict.interval
+        shown = interval.display if interval else "—"
+        task = candidate.task or "(untitled)"
+        print(
+            f"{candidate.manual_path:<34} {candidate.page:>5}  "
+            f"{candidate.status:<8} {shown:<14} {task}"
+        )
+        if candidate.verdict.evidence:
+            print(f'{"":<41} "{" ".join(candidate.verdict.evidence.split())}"')
+        if candidate.verdict.disagreement:
+            print(f"{'':<41} {candidate.verdict.disagreement}")
+
+    rejected = result.rejected
+    if rejected:
+        print()
+        print("Rejected:")
+        for candidate in rejected:
+            print(
+                f"  {candidate.manual_path} p.{candidate.page}: "
+                f"{candidate.verdict.reason} — {candidate.quote[:60]!r}"
+            )
+
+    print()
+    print(
+        f"{len(result.manuals)} manuals · {len(result.candidates)} candidates · "
+        f"{counts.get('PASS', 0)} passed · {counts.get('REPAIR', 0)} repaired · "
+        f"{counts.get('REJECT', 0)} rejected · {counts.get('SKIP', 0)} skipped · "
+        f"{result.seconds:.0f}s · {result.tokens} tokens · $0"
+    )
+    print(f"Retries: {sum(c.retries for c in result.candidates)}")
+
+    if rejected or result.skipped:
+        return EXIT_PARTIAL
+    return EXIT_OK
 
 
 def _cmd_models(args: argparse.Namespace, config: Config) -> int:
@@ -95,6 +203,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     logging.basicConfig(level=args.log_level, format="%(levelname)s %(name)s: %(message)s")
+    # pypdf warns about embedded fonts on almost every real manual; the warning
+    # is not actionable and buries the output that matters.
+    logging.getLogger("pypdf").setLevel(logging.ERROR)
 
     try:
         config = load_config()

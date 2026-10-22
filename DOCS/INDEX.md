@@ -1,10 +1,9 @@
 # Project Index & Map
 
 ## Active State
-- **Current Phase:** Phase 1 — Corpus & extraction engine (Phase 0 complete)
-- **Current Task:** Collect the corpus — 10–12 text-based manual PDFs in one device class, into
-  `data/manuals/`. Then build `corpus/` → `extract/` → `retrieval/local.py`
-- **Blocked:** none. Tiger Cloud is authenticated and writable; the models are pulled; Ollama is running
+- **Current Phase:** Phase 2 — Cards, state, and the report (Phase 1 complete)
+- **Current Task:** Build `storage/` → `render/` → `report/` → the `card`/`done`/`report` subcommands
+- **Blocked:** none. Corpus scanned, 63 candidates with verified page citations, `out/scan-phase1.txt` saved
 
 ## Doc Map
 > **Restructure applied at kickoff (2026-10-22).** The docs now live in `DOCS/` and `MEMORY.md` lives

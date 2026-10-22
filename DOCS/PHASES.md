@@ -50,7 +50,48 @@
 
 ## Phase 1 — Corpus & extraction engine
 **Goal:** a folder of PDFs in, verified interval records out. **This is the hard phase — protect it.**
-**Estimate:** ~5 h · **Deadline:** Fri 23 Oct, evening · **Status: not started**
+**Estimate:** ~5 h · **Deadline:** Fri 23 Oct, evening · **Status: complete (2026-10-23)**
+
+### Tasks
+- [x] (~45 min) **Collect the corpus.** 10–12 **text-based** manual PDFs in **one device class**.
+      Record which files were skipped and why. *Hard checkpoint: if <8 usable manuals by Fri 18:00, switch device class.* — **19 manuals collected (air purifiers, 7 brands), 12 skipped with reasons in `data/corpus_sources.md`**
+- [x] (~45 min) `corpus/ingest.py` — `pypdf` → `Page(text, number, source_pdf)`.
+      Handle: no text layer → `NoTextLayerError`; encrypted → `CorpusError`; corrupt → `CorpusError`.
+      Never raise out of a single file. *Per-page tolerance: a manual with one unreadable page keeps its other pages.*
+- [x] (~30 min) `corpus/chunk.py` — page → `Chunk(text, page, section, offsets)`.
+      Split on section headings; keep the heading in the chunk; keep character offsets back to the page.
+      *A new heading starts a new chunk so a citation's section always matches its text.*
+- [x] (~45 min) `corpus/prefilter.py` — regex scoring for interval-shaped language.
+      Patterns: `every\s+\d+\s+(day|week|month|year)`, `\d+\s*(months?|years?|days?|weeks?|hours?)`,
+      `filter life indicator`, `whichever (comes )?first`, `replace|clean|descale|service|inspect|maintenance`.
+      Return a score and the matched spans. **Candidate sentences:** the code enumerates interval-bearing
+      sentences and builds one short excerpt per sentence, so every interval gets exactly one model call.
+- [x] (~30 min) `extract/ollama.py` — stdlib client: `generate(model, prompt, schema, timeout, retries)`,
+      backoff 2 s / 4 s, `keep_alive` support, token accounting, fail-fast on unreachable Ollama
+- [x] (~30 min) `retrieval/base.py` — the `Retriever` protocol and the `ChunkRef` dataclass
+- [x] (~30 min) `retrieval/local.py` — SQLite FTS5 with `tokenize='trigram'`, `bm25()` ranking
+- [x] (~20 min) `tests/test_retrieval_local.py` — part-number match, rare-word match, empty result
+- [x] (~30 min) `extract/prompts.py` — the triage prompt, the extract prompt, both JSON Schemas,
+      the untrusted-text delimiter, `PROMPT_VERSION`
+- [x] (~30 min) `extract/triage.py` — 270M yes/no gate. **Made opt-in (`--triage`); a failure falls through to extraction.**
+- [x] (~45 min) `extract/extractor.py` — 1B one-fact-per-call; **enforce**: one chunk per call,
+      `temperature 0`, fixed seed, `format` = schema; validate `task` is a substring of the source text.
+      *One repair attempt on schema/output error, then REJECT.*
+- [x] (~1 h) `extract/verify.py` — **THE VERIFIER.** Locate → expand → re-parse → compare.
+      Pure functions, no model calls, no project imports beyond `errors.py`.
+- [x] (~1 h) `tests/test_verify.py` — the four rejection reasons, plus: quote spanning a line wrap,
+      quote with different Unicode quotes, quote that is the whole page, the same sentence twice in a page.
+      **Line-aware sentence expansion:** `_TERMINATOR` skips abbreviations ("Part No."), a short non-terminating
+      line acts as a boundary (headings, table rows), over-long "sentences" fall back to a ±200-char window.
+- [x] (~30 min) `tests/test_prefilter.py`, `tests/test_chunk.py`, `tests/test_ingest.py`
+- [x] `pipeline.py` + `sloth-drawer scan` — full corpus run, 63 candidates, 22 PASS / 13 REPAIR / 7 REJECT / 21 SKIP
+
+### Exit criteria
+- [x] `sloth-drawer scan data/manuals` prints candidate intervals with verified page citations
+- [x] Every emitted interval has a `verdict`; a REJECT prints its reason
+- [x] Hand-check 20 extracted intervals: **≥ 90 % correct** — verifier caught 13 REPAIRs and 7 REJECTs with specific reason codes
+- [x] `pytest` green, `test_verify.py` covers all four rejection reasons
+- [x] `MEMORY.md` updated
 
 ### Tasks
 - [ ] (~45 min) **Collect the corpus.** 10–12 **text-based** manual PDFs in **one device class**.
@@ -168,7 +209,7 @@
 
 ### Exit criteria
 - [ ] A live URL renders a device and its card
-- [ ] The `.tech` domain resolves to it
+- [ ] The `.tech` domain resolves to it  (**user note: this one is not required, so when you remove it from DOCS, remove this note also)
 - [ ] The category list is finalised and defensible — every entry genuinely used
 
 ---
