@@ -24,6 +24,7 @@ from dataclasses import dataclass
 
 from sloth_drawer.errors import (
     ConfigError,
+    ModelSchemaError,
     ModelTimeoutError,
     OllamaUnavailableError,
 )
@@ -111,9 +112,9 @@ def post_json(host: str, path: str, payload: dict, timeout: float) -> tuple[dict
     try:
         decoded = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ModelTimeoutError("Ollama replied with something that is not JSON.") from exc
+        raise ModelSchemaError("Ollama replied with something that is not JSON.") from exc
     if not isinstance(decoded, dict):
-        raise ModelTimeoutError("Ollama replied with an unexpected payload.")
+        raise ModelSchemaError("Ollama replied with an unexpected payload.")
     return decoded, elapsed
 
 

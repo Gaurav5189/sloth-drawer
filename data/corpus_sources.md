@@ -12,7 +12,7 @@
 #
 # 31 candidates were fetched. 19 became the corpus. The 12 that did not are
 # listed below with the reason, because the skipped files are part of the
-# honest story: 4 have no text layer at all, 6 were blocked by the host, and 2
+# honest story: 4 have no text layer at all, 7 were blocked by the host, and 1
 # could not be parsed by pypdf.
 
 ## --- the corpus (19 manuals) ---

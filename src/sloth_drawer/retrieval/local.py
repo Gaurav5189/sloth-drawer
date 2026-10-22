@@ -85,6 +85,7 @@ class LocalRetriever:
                 "VALUES (?, ?, ?, ?, ?)",
                 rows,
             )
+            self._connection.commit()
         except sqlite3.Error as exc:
             raise StorageError(f"Could not index the chunks: {exc}") from exc
         return len(rows)

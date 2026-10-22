@@ -26,7 +26,12 @@ from sloth_drawer.config import Config
 from sloth_drawer.corpus import prefilter
 from sloth_drawer.corpus.chunk import candidate_excerpts, chunk_manual
 from sloth_drawer.corpus.ingest import Manual, Skipped, ingest_directory
-from sloth_drawer.errors import ModelError, ModelOutputError, ModelSchemaError
+from sloth_drawer.errors import (
+    ModelError,
+    ModelOutputError,
+    ModelSchemaError,
+    OllamaUnavailableError,
+)
 from sloth_drawer.extract.extractor import extract
 from sloth_drawer.extract.prompts import PROMPT_VERSION
 from sloth_drawer.extract.triage import triage
@@ -133,6 +138,8 @@ def scan_manual(
                         section=chunk.section,
                         keep_alive=keep_alive,
                     )
+                except OllamaUnavailableError:
+                    raise
                 except ModelError as exc:
                     LOGGER.warning(
                         "%s p.%s: triage failed (%s); extracting anyway",
@@ -194,6 +201,8 @@ def scan_manual(
                     )
                 )
                 continue
+            except OllamaUnavailableError:
+                raise
             except ModelError as exc:
                 LOGGER.warning("%s p.%s: %s", manual.path.name, chunk.page, exc)
                 candidates.append(

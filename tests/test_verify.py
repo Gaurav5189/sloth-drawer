@@ -229,6 +229,22 @@ def test_the_expansion_stops_at_a_heading() -> None:
     assert "User Manual" not in sentence
 
 
+def test_dash_collapsing_does_not_cross_line_boundaries() -> None:
+    """A bullet '- item' on one line and content on the next must not fuse.
+
+    The whole-page normalise() collapses "- " across the newline, but
+    _flat_lines() normalises per line. If they drift, the verifier expands
+    the wrong sentence.
+    """
+    page = "Section 4.2\n- Pre-Carbon filter\nReplace it every 2 months."
+    # The quote "every 2 months" should expand to the sentence containing it.
+    # Before the fix, the "- " on line 2 would collapse across the newline,
+    # shifting offsets by 1 char per bullet line.
+    start, end, _occurrences = locate_quote(page, "every 2 months")  # type: ignore[misc]
+    sentence, _offset = expand_to_sentence(page, start, end)  # type: ignore[arg-type]
+    assert "Replace it every 2 months" in sentence
+
+
 def test_a_verdict_knows_whether_it_may_reach_a_card() -> None:
     assert verify(_output(), PAGE).accepted is True
     assert verify(_output(interval_months=3), PAGE).accepted is True

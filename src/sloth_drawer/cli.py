@@ -98,11 +98,16 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _cmd_scan(args: argparse.Namespace, config: Config) -> int:
     """Read a folder of manuals and print every interval the verifier accepted."""
+    from sloth_drawer.models import check_ollama
     from sloth_drawer.pipeline import scan_corpus
 
     directory = Path(args.directory)
     if not directory.is_dir():
         raise ConfigError(f"Manual directory not found: {directory}")
+
+    # Fail-fast if Ollama is unreachable — documented behaviour is exit 2,
+    # not a batch of REJECT model_timeout rows.
+    check_ollama(config.ollama_host)
 
     result = scan_corpus(
         directory,

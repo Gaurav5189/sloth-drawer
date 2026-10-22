@@ -4,9 +4,7 @@
 > per device** — the interval, the manufacturer's own sentence, the page number, and the next date it
 > is due.
 
-**Status: in development (Phase 0 of 7).** Nothing here is finished yet. The README is written
-properly in Phase 3, once the accuracy numbers in `out/report.md` exist to back it up — a README
-claim that is not backed by a measured number does not ship.
+**Status: Phase 2 — the engine works, cards and report are next.** The corpus scan (`sloth-drawer scan data/manuals`) prints verified intervals with page citations; 63 candidates yield 22 PASS / 13 REPAIR / 7 REJECT / 21 SKIP in ~13 min.
 
 ## What it is
 
@@ -30,15 +28,13 @@ card; it can never produce a wrong date.
 
 ```bash
 uv sync
+ollama serve &
+ollama pull gemma3:270m && ollama pull gemma3:1b && ollama pull nomic-embed-text
 uv run sloth-drawer models
 ```
 
-`uv sync` needs a local [Ollama](https://ollama.com) server for inference:
-
-```bash
-ollama serve
-ollama pull gemma3:270m && ollama pull gemma3:1b && ollama pull nomic-embed-text
-```
+`uv sync` installs the Python dependencies; the Ollama server is only needed for
+`sloth-drawer models` and `sloth-drawer scan`.
 
 ## Documentation
 

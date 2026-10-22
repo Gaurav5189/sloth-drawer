@@ -142,7 +142,9 @@ def _flatten(text: str) -> str:
     """
     straightened = text.translate(_TRANSLATION)
     without_thousands = re.sub(r"(?<=\d),(?=\d)", "", straightened)
-    without_dash_spaces = re.sub(r"\s*-\s*", "-", without_thousands)
+    # [^\S\n] = whitespace except newline; dash-collapsing must not cross
+    # line boundaries because _flat_lines normalises per line.
+    without_dash_spaces = re.sub(r"[^\S\n]*-[^\S\n]*", "-", without_thousands)
     return re.sub(r"\s+", " ", without_dash_spaces).strip()
 
 

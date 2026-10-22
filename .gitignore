@@ -1,6 +1,7 @@
 # --- user data: never commit the manuals themselves (RULES.md 4.4) ---
 data/manuals/*
 !data/manuals/.gitkeep
+MEMORY.md
 
 # --- generated output ---
 out/

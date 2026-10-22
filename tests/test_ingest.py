@@ -15,13 +15,14 @@ from sloth_drawer.corpus.ingest import (
 from sloth_drawer.errors import ConfigError, CorpusError
 
 CORPUS = Path(__file__).resolve().parents[1] / "data" / "manuals"
+HAS_PDFS = CORPUS.is_dir() and any(CORPUS.glob("*.pdf"))
 
 
 def _manual(name: str) -> Path:
     return CORPUS / name
 
 
-@pytest.mark.skipif(not CORPUS.exists(), reason="the corpus is not downloaded")
+@pytest.mark.skipif(not HAS_PDFS, reason="the corpus is not downloaded")
 def test_a_real_manual_is_read() -> None:
     manual = read_manual(_manual("honeywell-hpa8350.pdf"), "honeywell-hpa8350")
     assert manual.page_count > 0
@@ -30,7 +31,10 @@ def test_a_real_manual_is_read() -> None:
     assert len(manual.text) > 1000
 
 
-@pytest.mark.skipif(not CORPUS.exists(), reason="the corpus is not downloaded")
+@pytest.mark.skipif(
+    not _manual("medify-ma-25.pdf").exists(),
+    reason="the medify-ma-25 pdf is missing",
+)
 def test_a_manual_whose_page_fails_still_yields_its_other_pages() -> None:
     """One broken page is not a broken manual."""
     manual = read_manual(_manual("medify-ma-25.pdf"), "medify-ma-25")
@@ -38,7 +42,7 @@ def test_a_manual_whose_page_fails_still_yields_its_other_pages() -> None:
     assert manual.unreadable_pages
 
 
-@pytest.mark.skipif(not CORPUS.exists(), reason="the corpus is not downloaded")
+@pytest.mark.skipif(not HAS_PDFS, reason="the corpus is not downloaded")
 def test_the_whole_corpus_is_readable() -> None:
     result = ingest_directory(CORPUS)
     assert result.ok >= 15
