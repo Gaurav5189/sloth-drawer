@@ -1,0 +1,86 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sloth-drawer"
+version = "0.1.0"
+description = "Read the manual PDFs you already own and print one maintenance card per device."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "Sloth Drawer contributors" }]
+keywords = ["manuals", "maintenance", "offline", "ollama", "pdf"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: End Users/Desktop",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Utilities",
+]
+
+# Core path only. Everything here ships a wheel, so a cold install stays fast
+# (RULES.md 1.1). Inference is local Ollama; HTTP is stdlib urllib.
+dependencies = [
+  "pypdf>=4",
+  "fastapi>=0.115",
+  "uvicorn>=0.30",
+  "psycopg[binary]>=3.2",
+  "pgvector>=0.3",
+]
+
+[project.optional-dependencies]
+# Each extra needs something the user may not have: a Sentry account, or a
+# TabPFN licence. Never imported from the core path (RULES.md 1.2).
+observability = ["sentry-sdk>=2.0"]
+forecast = ["tabpfn>=2.0"]
+
+[project.scripts]
+sloth-drawer = "sloth_drawer.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/sloth-drawer/sloth-drawer"
+
+[dependency-groups]
+# Dev-only. Not part of the shipped product; `uv sync --no-group dev`
+# installs the core path alone.
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.6",
+  "mypy>=1.11",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sloth_drawer"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+# `bench/` is the measurement harness, not shipped code. Its exact source
+# produced the benchmark numbers published in the post, so it is left byte-stable
+# rather than reformatted. `src/` and `tests/` are linted in full.
+exclude = ["bench"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RET", "ARG", "PTH"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src/sloth_drawer"]
+strict = false
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+disallow_untyped_defs = true
+
+# mypy is only required to be clean on the deterministic core (RULES.md 1.5).
+[[tool.mypy.overrides]]
+module = ["sloth_drawer.cli", "sloth_drawer.models"]
+disallow_untyped_defs = false

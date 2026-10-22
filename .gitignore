@@ -1,0 +1,28 @@
+# --- user data: never commit the manuals themselves (RULES.md 4.4) ---
+data/manuals/*
+!data/manuals/.gitkeep
+
+# --- generated output ---
+out/
+
+# --- python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# --- local state ---
+*.db
+*.db-wal
+*.db-shm
+
+# --- secrets ---
+.env
+
+# --- tooling caches ---
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

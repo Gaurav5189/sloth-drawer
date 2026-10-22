@@ -333,6 +333,9 @@ degraded fallback.
 CREATE EXTENSION IF NOT EXISTS vectorscale CASCADE;   -- brings in pgvector
 CREATE EXTENSION IF NOT EXISTS pg_textsearch;          -- BM25 full-text, PG 17/18
 
+CREATE SCHEMA IF NOT EXISTS sloth;                     -- the app owns its own schema
+SET search_path TO sloth, public;
+
 CREATE TABLE IF NOT EXISTS manual_chunks (
   id          BIGSERIAL PRIMARY KEY,
   device_slug TEXT NOT NULL,
@@ -358,13 +361,15 @@ decision in `MEMORY.md`.
 **Hybrid query** — BM25 (keyword) and vector (semantic) in parallel, fused with RRF:
 
 ```sql
+SET search_path TO sloth, public;
+
 WITH vec AS (
   SELECT id, ROW_NUMBER() OVER (ORDER BY embedding <=> %s::vector) AS rank
   FROM manual_chunks ORDER BY embedding <=> %s::vector LIMIT 20
 ), kw AS (
-  SELECT id, ROW_NUMBER() OVER (ORDER BY content <@> to_bm25query(%s,'manual_chunks_bm25_idx')) AS rank
+  SELECT id, ROW_NUMBER() OVER (ORDER BY content <@> to_bm25query(%s,'sloth.manual_chunks_bm25_idx')) AS rank
   FROM manual_chunks
-  ORDER BY content <@> to_bm25query(%s,'manual_chunks_bm25_idx') LIMIT 20
+  ORDER BY content <@> to_bm25query(%s,'sloth.manual_chunks_bm25_idx') LIMIT 20
 )
 SELECT m.id, m.device_slug, m.page, m.section,
        COALESCE(1.0/(60+v.rank),0) + COALESCE(1.0/(60+k.rank),0) AS score
@@ -375,10 +380,12 @@ WHERE v.id IS NOT NULL OR k.id IS NOT NULL
 ORDER BY score DESC LIMIT %s;
 ```
 
-Three things that are easy to get wrong and are therefore rules (see `RULES.md` §1.3):
-always use `to_bm25query(text, 'index_name')` rather than the bare form; BM25 scores are **negative and
-lower is better**, so never normalise them against a cosine similarity; and RRF fuses **ranks**, not
-scores — that is the entire point of choosing it.
+Four things that are easy to get wrong and are therefore rules (see `RULES.md` §1.3) — all four were
+measured against the live service on 2026-10-22, not read off a blog post: use the two-argument
+`to_bm25query(text, 'index_name')` with a **schema-qualified** index name; the one-argument overload
+only resolves for a typed argument, so it is a trap; `CREATE INDEX` takes an **unqualified** index
+name; and BM25 scores are **negative and lower is better**, so never normalise them against a cosine
+similarity — RRF fuses **ranks**, not scores, which is the entire point of choosing it.
 
 ### 4.5 Sentry
 `sentry-sdk` with `traces_sample_rate=1.0`. One transaction per manual, one span per pipeline stage

@@ -1,19 +1,21 @@
 # Project Index & Map
 
 ## Active State
-- **Current Phase:** Phase 0 — Setup (not started)
-- **Current Task:** Scaffold the project, refresh the Tiger Cloud CLI token, then start the corpus hunt
+- **Current Phase:** Phase 1 — Corpus & extraction engine (Phase 0 complete)
+- **Current Task:** Collect the corpus — 10–12 text-based manual PDFs in one device class, into
+  `data/manuals/`. Then build `corpus/` → `extract/` → `retrieval/local.py`
+- **Blocked:** none. Tiger Cloud is authenticated and writable; the models are pulled; Ollama is running
 
 ## Doc Map
-> **Pending restructure:** these paths change at kickoff — docs move to `DOCS/`, `MEMORY.md` moves to
-> `.agents/`. Until then every file is at the project root.
+> **Restructure applied at kickoff (2026-10-22).** The docs now live in `DOCS/` and `MEMORY.md` lives
+> in `.agents/`. `PLAN.md` stayed at the project root, next to `README.md`.
 
 - **`RULES.md`**: Code formatting, framework rules, strict constraints. (path: DOCS/)
 - **`PRD.md`**: Product features, user flows, acceptance criteria. (DOCS/)
 - **`ARCHITECTURE.md`**: Database schema, API endpoints, folder structure, system flow. (DOCS/)
 - **`DESIGN.md`**: UI component rules, color palettes, visual tokens, layout specs. (DOCS/)
 - **`PHASES.md`**: Roadmap breakdown, current phase deliverables, completed milestones. (DOCS/)
-- **`PLAN.md`**: The 4-day schedule, model benchmarks, risk register, post outline. (DOCS/)
+- **`PLAN.md`**: The 4-day schedule, model benchmarks, risk register, post outline. (project root)
 - **`MEMORY.md`**: Architectural decisions, past bugs, lessons learned. (.agents/)
 
 ## Retrieval Guidelines

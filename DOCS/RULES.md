@@ -64,9 +64,16 @@ The backend is chosen by config, never by an `if` in the pipeline.
 CREATE EXTENSION IF NOT EXISTS vectorscale CASCADE;   -- brings in pgvector
 CREATE EXTENSION IF NOT EXISTS pg_textsearch;          -- BM25 full-text, PG 17/18
 ```
+> **Verified on the reference service** (Tiger Cloud, `ap-south-1`, PostgreSQL 18.6,
+> 2026-10-22): both statements succeed. `pg_textsearch` 1.5.1 and `vectorscale` 0.9.0 are available on
+> a PG 17/18 service; `vector` 0.8.7 was already installed.
 
-**Schema (`vector/schema.sql`, applied idempotently):**
+**Schema (`vector/schema.sql`, applied idempotently).** The app owns a dedicated schema so the table
+never lands in `public` and the DDL can be scoped:
 ```sql
+CREATE SCHEMA IF NOT EXISTS sloth;
+SET search_path TO sloth, public;
+
 CREATE TABLE IF NOT EXISTS manual_chunks (
   id          BIGSERIAL PRIMARY KEY,
   device_slug TEXT NOT NULL,
@@ -83,6 +90,8 @@ CREATE INDEX IF NOT EXISTS manual_chunks_bm25_idx
   ON manual_chunks USING bm25(content)
   WITH (text_config='english');
 ```
+> `text_config` is **required** by the `bm25` access method — omitting it fails with
+> `text_config parameter is required for bm25 indexes`.
 
 **HNSW is deliberately omitted at this corpus size.** At a few thousand chunks the planner will choose a
 sequential scan anyway, and the BM25 index does the work. Add
@@ -94,13 +103,15 @@ Two queries in parallel, then Reciprocal Rank Fusion with `k = 60` (the value fr
 Buettcher paper; do not tune it).
 
 ```sql
+SET search_path TO sloth, public;
+
 WITH vec AS (
   SELECT id, ROW_NUMBER() OVER (ORDER BY embedding <=> %s::vector) AS rank
   FROM manual_chunks ORDER BY embedding <=> %s::vector LIMIT 20
 ), kw AS (
-  SELECT id, ROW_NUMBER() OVER (ORDER BY content <@> to_bm25query(%s,'manual_chunks_bm25_idx')) AS rank
+  SELECT id, ROW_NUMBER() OVER (ORDER BY content <@> to_bm25query(%s,'sloth.manual_chunks_bm25_idx')) AS rank
   FROM manual_chunks
-  ORDER BY content <@> to_bm25query(%s,'manual_chunks_bm25_idx') LIMIT 20
+  ORDER BY content <@> to_bm25query(%s,'sloth.manual_chunks_bm25_idx') LIMIT 20
 )
 SELECT m.id, m.device_slug, m.page, m.section,
        COALESCE(1.0/(60+v.rank),0) + COALESCE(1.0/(60+k.rank),0) AS score
@@ -111,13 +122,23 @@ WHERE v.id IS NOT NULL OR k.id IS NOT NULL
 ORDER BY score DESC LIMIT %s;
 ```
 
-Notes that are easy to get wrong, and are therefore rules:
-- **Always use `to_bm25query(text, 'index_name')`, never the bare `'text'` form.** The implicit form
-  relies on planner hooks that do not fire inside PL/pgSQL functions or prepared statements.
+Notes that are easy to get wrong, and are therefore rules — each one below was measured against the
+live service on 2026-10-22, not read off a blog post:
+- **Always use the two-argument `to_bm25query(text, 'index_name')`.** The index name **must be
+  schema-qualified** (`sloth.manual_chunks_bm25_idx`); an unqualified name fails with
+  `index "..." does not exist` unless `search_path` already contains the schema.
+- **The one-argument `to_bm25query(text)` overload exists but is a trap.** It resolves only for a
+  *typed* argument — a psycopg `%s` placeholder is typed `text` and works, but a bare literal such as
+  `to_bm25query('DX-CF14')` fails with `function to_bm25query(unknown) does not exist`. Use the
+  two-argument form everywhere and the question never arises.
+- **`CREATE INDEX` takes an unqualified index name.** `CREATE INDEX sloth.name ON sloth.manual_chunks`
+  is a syntax error (`syntax error at or near "."`); PostgreSQL's `CREATE INDEX` grammar has no
+  qualified index name and always creates the index in the table's schema.
 - **BM25 scores are negative and lower is better.** Do not normalise them into a 0–1 range and do not
   compare them against a cosine similarity. RRF fuses *ranks*, not scores — that is the whole point.
-- Use `to_bm25query` with the explicit index name in the `WHERE` clause, and the bare form in `ORDER BY`,
-  exactly as the Tiger documentation shows.
+- The `to_bm25query` call belongs in **both** the window function and the `ORDER BY`. The earlier
+  version of this file told you to use the bare form in `ORDER BY`; that is wrong for this extension
+  version and the rule has been corrected above.
 
 **The local backend mirrors the same shape**, so the two are behaviourally comparable:
 ```sql

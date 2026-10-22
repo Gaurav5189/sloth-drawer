@@ -10,41 +10,47 @@
 
 ## Phase 0 — Setup & harness
 **Goal:** a repo that runs, a model registry that is honest about the hardware, and a test runner.
-**Estimate:** ~1.5 h · **Deadline:** Fri 23 Oct, morning
+**Estimate:** ~1.5 h · **Deadline:** Fri 23 Oct, morning · **Status: complete (2026-10-22)**
 
 ### Tasks
-- [ ] (~10 min) Initialise the git repo in `sloth-drawer/`, write `README.md` stub, `LICENSE` (MIT), `.gitignore`
+- [x] (~10 min) Initialise the git repo in `sloth-drawer/`, write `README.md` stub, `LICENSE` (MIT), `.gitignore`
       (`data/manuals/`, `out/`, `__pycache__/`, `*.db`, `.env`, `.venv/`)
-- [ ] (~15 min) `pyproject.toml`: `src` layout, `requires-python = ">=3.11"`, **core** dependencies
+- [x] (~15 min) `pyproject.toml`: `src` layout, `requires-python = ">=3.11"`, **core** dependencies
       `pypdf` / `fastapi` / `uvicorn` / `psycopg[binary]` / `pgvector`, optional extras
       `observability` / `forecast`, console script `sloth-drawer`
-- [ ] (~5 min) `.env.example` documenting `SLOTH_DATABASE_URL`, `SLOTH_EMBED_MODEL`, `SLOTH_EMBED_DIMS`,
+- [x] (~5 min) `.env.example` documenting `SLOTH_DATABASE_URL`, `SLOTH_EMBED_MODEL`, `SLOTH_EMBED_DIMS`,
       `SLOTH_SENTRY_DSN`, `SLOTH_OLLAMA_HOST`, `SLOTH_RETRIEVAL`
-- [ ] (~5 min) Verify the reference box: `sqlite3` has FTS5 **and** the `trigram` tokenizer; record the
-      SQLite version in `MEMORY.md`
-- [ ] (~10 min) Time `uv sync` from cold and record the wall-clock in `MEMORY.md` (target: < 60 s)
-- [ ] (~5 min) `tiger auth login` to refresh the expired CLI token, then `tiger db uri` for the service
-      URL. **Do not point the app at a `read_only: prod` service** — create a dev service or schema
-- [ ] (~15 min) `src/sloth_drawer/config.py` — project root resolution, `data/` and `out/` paths, defaults
+- [x] (~5 min) Verify the reference box: `sqlite3` has FTS5 **and** the `trigram` tokenizer; record the
+      SQLite version in `MEMORY.md` — **SQLite 3.54.0, both confirmed**
+- [x] (~10 min) Time `uv sync` from cold and record the wall-clock in `MEMORY.md` (target: < 60 s) —
+      **3.66 s** for `uv sync --no-group dev` from an empty cache
+- [x] (~5 min) `tiger auth login` to refresh the expired CLI token, then `tiger db uri` for the service
+      URL. **Do not point the app at a `read_only: prod` service** — create a dev service or schema —
+      *the existing service is `Environment: DEV`, so it is writable; the app will use its own `sloth`
+      schema.*
+- [x] (~15 min) `src/sloth_drawer/config.py` — project root resolution, `data/` and `out/` paths, defaults
       (`OLLAMA_HOST` must be loopback — raise `ConfigError` otherwise), `PROMPT_VERSION = 1`
-- [ ] (~15 min) `src/sloth_drawer/errors.py` — the full exception hierarchy from `RULES.md` §2.2
-- [ ] (~10 min) `src/sloth_drawer/models.py` — the model registry table from `ARCHITECTURE.md` §4.4,
+- [x] (~15 min) `src/sloth_drawer/errors.py` — the full exception hierarchy from `RULES.md` §2.2
+- [x] (~10 min) `src/sloth_drawer/models.py` — the model registry table from `ARCHITECTURE.md` §4.4,
       with the measured sizes and latencies as data, plus `check_ollama()` / `check_model_pulled()`
-- [ ] (~15 min) `tests/` scaffold + `test_errors.py` + a test that the import-direction rule in
-      `ARCHITECTURE.md` §3 holds (no project import from `verify.py` or `prefilter.py` beyond `errors.py`)
-- [ ] (~10 min) `bench/README.md` — how to re-run the model benchmark
+- [x] (~15 min) `tests/` scaffold + `test_errors.py` + a test that the import-direction rule in
+      `ARCHITECTURE.md` §3 holds (no project import from `verify.py` or `prefilter.py` beyond `errors.py`) —
+      *the test is AST-based and covers every module, not just the two named ones*
+- [x] (~10 min) `bench/README.md` — how to re-run the model benchmark
 
 ### Exit criteria
-- [ ] `uv sync` succeeds and `sloth-drawer models` lists the three models with their measured numbers
-- [ ] `sloth-drawer models` fails cleanly with the "start `ollama serve`" message when Ollama is down
-- [ ] Test runner green
-- [ ] `MEMORY.md` updated
+- [x] `uv sync` succeeds and `sloth-drawer models` lists the three models with their measured numbers
+- [x] `sloth-drawer models` fails cleanly with the "start `ollama serve`" message when Ollama is down
+      — *verified both ways: exit 0 with the table, exit 2 with the message*
+- [x] Test runner green — **52 passing**
+- [x] `MEMORY.md` updated
+
 
 ---
 
 ## Phase 1 — Corpus & extraction engine
 **Goal:** a folder of PDFs in, verified interval records out. **This is the hard phase — protect it.**
-**Estimate:** ~5 h · **Deadline:** Fri 23 Oct, evening
+**Estimate:** ~5 h · **Deadline:** Fri 23 Oct, evening · **Status: not started**
 
 ### Tasks
 - [ ] (~45 min) **Collect the corpus.** 10–12 **text-based** manual PDFs in **one device class**.
