@@ -30,4 +30,17 @@ if grep -rlq "postgresql://" "$ROOT/deploy/seed/" 2>/dev/null; then
 fi
 
 sha256sum "$ROOT/out/sloth.db" "$ROOT/deploy/seed/sloth.db"
-echo "Seed refreshed (data/ and deploy/ only — the manuals are never shipped)."
+
+# The 2026-10-23 Render failure class: a global .gitignore rule (*.db) can
+# silently swallow the seed, and the deploy then fails with "not found" in its
+# build context. Fail HERE, loudly, if the seed is ignored or not tracked.
+if git -C "$ROOT" check-ignore -q deploy/seed/sloth.db 2>/dev/null; then
+    echo "refusing: deploy/seed/sloth.db is still gitignored (check .gitignore)" >&2
+    exit 1
+fi
+if ! git -C "$ROOT" ls-files --error-unmatch deploy/seed/sloth.db >/dev/null 2>&1; then
+    echo "NOT yet committed: run  git add deploy/seed/sloth.db && git commit" >&2
+    exit 1
+fi
+
+echo "Seed refreshed, tracked, and DSN-free (data/ and deploy/ only — the manuals are never shipped)."

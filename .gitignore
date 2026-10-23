@@ -20,6 +20,10 @@ venv/
 *.db
 *.db-wal
 *.db-shm
+# The deploy seed is the ONE committed database: it is how a stateless free-tier
+# deploy gets the scan's verified result (deploy/build-seed.sh refreshes it; see
+# DOCS/DEPLOY.md). Everything else under out/, blab/, snapshots/ stays ignored.
+!deploy/seed/*.db
 
 # --- secrets ---
 .env
