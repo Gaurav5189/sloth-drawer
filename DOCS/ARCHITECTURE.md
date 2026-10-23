@@ -149,6 +149,8 @@ sloth-drawer/
 │   ├── cli.py                    # argparse: scan | card | done | report | models | index | serve
 │   ├── config.py                 # paths, constants, model registry, backend selection
 │   ├── errors.py                 # typed exceptions + exit codes
+│   ├── pipeline.py               # one manual: ingest → chunk → prefilter → triage → extract → verify
+│   ├── batch.py                  # the whole corpus: one transaction per manual, checkpoint, resume
 │   │
 │   ├── corpus/
 │   │   ├── __init__.py
@@ -213,6 +215,8 @@ sloth-drawer/
 │   ├── test_service_log.py
 │   ├── test_cards.py
 │   ├── test_report.py
+│   ├── test_batch.py             # one transaction per manual, resume, the row-winner policy
+│   ├── test_observability.py     # tracing is off by default and numeric-only when on
 │   ├── test_retrieval_local.py
 │   ├── test_retrieval_parity.py  # both backends must produce the same card
 │   └── test_web.py
@@ -233,10 +237,12 @@ sloth-drawer/
 **Dependency direction (enforced by an import-lint test):**
 
 ```
-cli → corpus → retrieval → extract → verify → storage
-      ↘ render ↗              ↘ report ↗   ↘ vector ↗
-                                       web (imports storage + render only)
-                  observability (side-channel only, imported by nobody below it)
+cli → batch → pipeline → corpus → retrieval → extract → verify → storage
+      ↘ render ↗                  ↘ report ↗             ↘ vector ↗
+                                        web (imports storage + render only)
+             observability (a side channel: the pipeline imports only the
+                            protocol in ``observability/base.py``; ``sentry.py``
+                            is imported by the CLI and the batch runner)
 ```
 
 `verify.py` and `prefilter.py` import **nothing** from the project except `errors.py`. They are pure
@@ -247,6 +253,10 @@ verifier trustworthy enough to be the headline of the post.
 `retrieval/base.py` and `extract/embed.py` only — **it must not import `storage/`**, which is what
 enforces the "no identifiers in the cloud" boundary in `RULES.md` §3.1a. `web/` may read `storage/` and
 `render/`, and nothing else.
+
+`batch.py` is the top of the deterministic chain: it owns the per-manual transaction, the resume
+checkpoint and the report, so `pipeline.py` stays a pure function over one manual. `observability/base.py`
+is the only tracing module the pipeline sees, so the tracing backend stays swappable and optional.
 
 ---
 

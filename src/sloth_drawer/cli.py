@@ -11,6 +11,7 @@ import argparse
 import json
 import logging
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -30,6 +31,7 @@ from sloth_drawer.models import (
     check_ollama,
     is_available,
     model_registry,
+    require_model,
 )
 
 LOGGER = logging.getLogger("sloth_drawer")
@@ -97,6 +99,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="how long Ollama keeps the model loaded (e.g. 5m, or 0 to unload)",
     )
     scan.add_argument(
+        "--resume",
+        action="store_true",
+        help=(
+            "skip manuals already completed in out/batch.json with the same SHA-256. "
+            "For finishing a run that was interrupted"
+        ),
+    )
+    scan.add_argument(
+        "--force",
+        action="store_true",
+        help="start fresh even if a checkpoint exists (the default)",
+    )
+    scan.add_argument(
+        "--list",
+        action="store_true",
+        help="print every accepted interval with its page citation",
+    )
+    scan.add_argument(
         "--no-persist",
         action="store_true",
         help="do not write the intervals to the local database or the report",
@@ -135,49 +155,92 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _cmd_scan(args: argparse.Namespace, config: Config) -> int:
-    """Read a folder of manuals and print every interval the verifier accepted."""
-    from sloth_drawer.models import check_ollama
-    from sloth_drawer.pipeline import scan_corpus
-    from sloth_drawer.storage.db import load_devices, manual_index
+    """Read a folder of manuals, one transaction per manual, and report.
+
+    The scan is the batch runner (``sloth_drawer.batch``): it checkpoints each
+    manual so ``--resume`` can finish an interrupted run, and it writes the
+    report from that checkpoint.
+    """
+    from sloth_drawer.batch import run_batch
+    from sloth_drawer.observability import init_tracing
+    from sloth_drawer.storage.db import load_devices
 
     directory = Path(args.directory)
     if not directory.is_dir():
         raise ConfigError(f"Manual directory not found: {directory}")
 
-    # Fail-fast if Ollama is unreachable — documented behaviour is exit 2,
-    # not a batch of REJECT model_timeout rows.
+    # Fail fast if Ollama is unreachable or a model is not pulled — documented
+    # behaviour is exit 2, not a batch of REJECT model_timeout rows.
     check_ollama(config.ollama_host)
+    require_model(args.model, config.ollama_host, config.ollama_timeout)
+    if args.triage:
+        require_model(args.triage_model, config.ollama_host, config.ollama_timeout)
 
     devices: tuple[Device, ...] = ()
-    slugs: dict[str, str] = {}
     if config.paths.devices_toml.is_file():
         devices = load_devices(config.paths.devices_toml)
-        slugs = manual_index(devices)
     else:
         LOGGER.warning(
             "no device registry at %s; manuals are read but nothing is stored",
             config.paths.devices_toml,
         )
 
-    result = scan_corpus(
+    tracer = init_tracing(config)
+
+    def show(progress) -> None:
+        width = len(str(progress.total))
+        head = f"[{progress.index:>{width}}/{progress.total}]"
+        if progress.status == "resumed":
+            print(f"{head} resumed {progress.manual} (unchanged)", flush=True)
+        elif progress.status == "skipped":
+            print(f"{head} skipped {progress.manual}", flush=True)
+        else:
+            print(
+                f"{head} done    {progress.manual}: {progress.candidates} candidates, "
+                f"{progress.passed}P {progress.repaired}C {progress.rejected}R, "
+                f"{progress.seconds:.0f}s",
+                flush=True,
+            )
+
+    outcome = run_batch(
         directory,
         config=config,
+        devices=devices,
         model=args.model,
         triage_model=args.triage_model,
         use_triage=args.triage,
         threshold=args.threshold,
-        slugs=slugs,
         keep_alive=args.keep_alive,
+        resume=args.resume,
+        force=args.force,
+        persist=not args.no_persist,
+        tracer=tracer,
+        progress=show,
     )
+    tracer.flush()
 
-    for skipped in result.skipped:
-        print(f"skipped  {skipped}", file=sys.stderr)
+    if args.list:
+        _print_candidates(outcome.candidates)
 
-    counts = result.counts()
+    report = outcome.report
+    print()
+    print(report.table())
+    if not args.no_persist:
+        print()
+        print(f"Checkpoint: {outcome.checkpoint_path} · database: {config.paths.db}")
+        print(f"Report: {config.paths.report_json} · {config.paths.report_md}")
+
+    if report.rejected or report.skipped_manuals:
+        return EXIT_PARTIAL
+    return EXIT_OK
+
+
+def _print_candidates(candidates: Sequence[Candidate]) -> None:
+    """List the accepted intervals with their citation, for hand-checking."""
     print()
     print(f"{'MANUAL':<34} {'PAGE':>5}  {'VERDICT':<8} {'INTERVAL':<14} TASK")
     print("-" * 100)
-    for candidate in result.candidates:
+    for candidate in candidates:
         if not candidate.verdict.accepted:
             continue
         interval = candidate.verdict.interval
@@ -191,141 +254,6 @@ def _cmd_scan(args: argparse.Namespace, config: Config) -> int:
             print(f'{"":<41} "{" ".join(candidate.verdict.evidence.split())}"')
         if candidate.verdict.disagreement:
             print(f"{'':<41} {candidate.verdict.disagreement}")
-
-    rejected = result.rejected
-    if rejected:
-        print()
-        print("Rejected:")
-        for candidate in rejected:
-            print(
-                f"  {candidate.manual_path} p.{candidate.page}: "
-                f"{candidate.verdict.reason} — {candidate.quote[:60]!r}"
-            )
-
-    print()
-    print(
-        f"{len(result.manuals)} manuals · {len(result.candidates)} candidates · "
-        f"{counts.get('PASS', 0)} passed · {counts.get('REPAIR', 0)} repaired · "
-        f"{counts.get('REJECT', 0)} rejected · {counts.get('SKIP', 0)} skipped · "
-        f"{result.seconds:.0f}s · {result.tokens} tokens · $0"
-    )
-    print(f"Retries: {sum(c.retries for c in result.candidates)}")
-
-    if not args.no_persist and devices:
-        _persist(result, devices, config, model=args.model)
-
-    if rejected or result.skipped:
-        return EXIT_PARTIAL
-    return EXIT_OK
-
-
-#: How strongly a candidate claims the single row its ``(device, task, page)``
-#: key allows. A REJECT must never take a row a verified interval is holding;
-#: between two verified answers, PASS is the one the source agreed with.
-_PRIORITY = {"PASS": 2, "REPAIR": 1}
-
-
-def _outranks(candidate: Candidate, held: Candidate) -> bool:
-    """Whether ``candidate`` should take the one row its key allows.
-
-    An accepted answer beats a rejected one, and between two accepted answers
-    PASS beats REPAIR — a REPAIR is the one where the model's own number
-    disagreed with the source. Everything else keeps the old behaviour: the
-    later candidate wins.
-    """
-    return _PRIORITY.get(candidate.status, 0) >= _PRIORITY.get(held.status, 0)
-
-
-def _persist(result, devices, config: Config, *, model: str) -> None:
-    """Store the intervals and the run, then write the report.
-
-    Every write is idempotent, so a re-scan of the same manual updates the rows
-    in place rather than duplicating them. ``(device, task, page)`` is the row's
-    key (RULES.md 2.6) and candidates are not unique on it, so they are reduced
-    to one winner per key before anything is written.
-    """
-    from sloth_drawer.extract.prompts import PROMPT_VERSION
-    from sloth_drawer.report.build import from_scan, write_report
-    from sloth_drawer.storage.db import (
-        RunRecord,
-        now_iso,
-        open_db,
-        record_run,
-        upsert_device,
-        upsert_interval,
-    )
-
-    connection = open_db(config.paths.db)
-    try:
-        ids = {device.slug: upsert_device(connection, device) for device in devices}
-        # Two excerpts of one chunk can name the same task, and every failed
-        # extraction is stored under the task name "". Upserting in scan order
-        # would let whichever of them lands last own the row — a REJECT taking
-        # the row of a verified interval leaves the report counting a PASS that
-        # no card can show.
-        chosen: dict[tuple[int, str, int], Candidate] = {}
-        for candidate in result.candidates:
-            device_id = ids.get(candidate.manual_slug)
-            if device_id is None:
-                continue
-            if candidate.status == "SKIP":
-                # A triage "no" is not a fact about the manual; it is not stored.
-                continue
-            key = (device_id, candidate.task, candidate.page)
-            held = chosen.get(key)
-            if held is None or _outranks(candidate, held):
-                chosen[key] = candidate
-
-        stored = len(chosen)
-        for candidate in chosen.values():
-            upsert_interval(
-                connection,
-                ids[candidate.manual_slug],
-                task=candidate.task,
-                section=candidate.section,
-                page=candidate.page,
-                interval_months=candidate.verdict.interval_months,
-                model_interval_months=candidate.verdict.model_interval_months,
-                evidence=candidate.verdict.evidence,
-                model_quote=candidate.quote or candidate.verdict.model_quote,
-                verdict=candidate.verdict.status,
-                reject_reason=candidate.verdict.reason,
-                model_id=candidate.model_id,
-                prompt_hash=str(PROMPT_VERSION),
-            )
-        counts = result.counts()
-        record_run(
-            connection,
-            RunRecord(
-                started_at=now_iso(),
-                finished_at=now_iso(),
-                model_id=model,
-                backend=config.retrieval,
-                manuals=len(result.manuals),
-                chunks=result.chunks,
-                candidates=len(result.candidates),
-                found=counts.get("PASS", 0) + counts.get("REPAIR", 0),
-                passed=counts.get("PASS", 0),
-                repaired=counts.get("REPAIR", 0),
-                rejected=counts.get("REJECT", 0),
-                seconds=result.seconds,
-                tokens=result.tokens,
-            ),
-        )
-    finally:
-        connection.close()
-
-    report = from_scan(
-        result,
-        devices,
-        model_id=model,
-        backend=config.retrieval,
-        prompt_version=PROMPT_VERSION,
-    )
-    json_path, md_path = write_report(report, config.paths)
-    print()
-    print(f"Stored {stored} intervals in {config.paths.db}")
-    print(f"Report: {json_path} · {md_path}")
 
 
 def _cmd_card(args: argparse.Namespace, config: Config) -> int:

@@ -18,14 +18,13 @@ produce a missing card (ARCHITECTURE.md 1).
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from sloth_drawer.config import Config
 from sloth_drawer.corpus import prefilter
 from sloth_drawer.corpus.chunk import candidate_excerpts, chunk_manual
-from sloth_drawer.corpus.ingest import Manual, Skipped, ingest_directory
+from sloth_drawer.corpus.ingest import Manual, Skipped
 from sloth_drawer.errors import (
     ModelError,
     ModelOutputError,
@@ -37,8 +36,21 @@ from sloth_drawer.extract.prompts import PROMPT_VERSION
 from sloth_drawer.extract.triage import triage
 from sloth_drawer.extract.verify import SKIP, Verdict, verify
 from sloth_drawer.models import DEFAULT_EXTRACTOR, DEFAULT_TRIAGE
+from sloth_drawer.observability.base import Span, Tracer, null_span
 
 LOGGER = logging.getLogger("sloth_drawer.pipeline")
+
+
+def stage(tracer: Tracer | None, op: str, description: str = "") -> AbstractContextManager[Span]:
+    """Open a pipeline-stage span, or a span that forgets everything.
+
+    ``None`` and a disabled tracer both resolve to a no-op, so a call site
+    never needs an ``if tracing`` branch. Only stage names and numbers reach a
+    span; the text being processed never does (RULES.md 3.1a).
+    """
+    if tracer is None or not tracer.enabled:
+        return null_span()
+    return tracer.span(op, description)
 
 
 @dataclass(frozen=True)
@@ -126,124 +138,144 @@ def scan_manual(
     use_triage: bool = False,
     threshold: int = prefilter.DEFAULT_THRESHOLD,
     keep_alive: str | int | None = None,
+    tracer: Tracer | None = None,
 ) -> ManualScan:
     """Read one manual and return a candidate per model answer."""
     candidates: list[Candidate] = []
-    chunks = 0
     pages = _page_texts(manual)
 
-    for chunk in chunk_manual(manual.pages):
-        if not prefilter.is_candidate(chunk.text, threshold):
-            continue
-        chunks += 1
+    # Chunking and pre-filtering are the cheap, deterministic stages. They get
+    # spans of their own so a trace shows how much work never reached a model.
+    with stage(tracer, "chunk", "page -> chunks") as span:
+        chunks = list(chunk_manual(manual.pages))
+        span.set_data("chunks.total", len(chunks))
+
+    with stage(tracer, "prefilter", "regex candidate scoring") as span:
+        wanted = [chunk for chunk in chunks if prefilter.is_candidate(chunk.text, threshold)]
+        span.set_data("chunks.candidates", len(wanted))
+
+    for chunk in wanted:
         for excerpt in candidate_excerpts(chunk):
             if use_triage and triage_model:
                 # The gate is an optimisation, not a decision. If the small
                 # model fails to answer, the candidate still goes to the
                 # extractor — a broken gate must not lose an interval.
+                gate = None
+                with stage(tracer, "triage", f"{triage_model} yes/no gate") as span:
+                    try:
+                        gate = triage(
+                            excerpt,
+                            model=triage_model,
+                            host=config.ollama_host,
+                            timeout=config.ollama_timeout,
+                            section=chunk.section,
+                            keep_alive=keep_alive,
+                        )
+                    except OllamaUnavailableError:
+                        raise
+                    except ModelError as exc:
+                        LOGGER.warning(
+                            "%s p.%s: triage failed (%s); extracting anyway",
+                            manual.path.name,
+                            chunk.page,
+                            exc,
+                        )
+                    else:
+                        span.set_token_usage(
+                            input_tokens=gate.reply.input_tokens,
+                            output_tokens=gate.reply.output_tokens,
+                        )
+                if gate is not None and not gate.has_interval:
+                    candidates.append(
+                        Candidate(
+                            manual_slug=manual.slug,
+                            manual_path=manual.path.name,
+                            page=chunk.page,
+                            section=chunk.section,
+                            excerpt=excerpt,
+                            task=gate.task,
+                            quote="",
+                            verdict=Verdict(
+                                status=SKIP,
+                                reason="no_interval_stated",
+                                page=chunk.page,
+                                section=chunk.section,
+                            ),
+                            model_id=triage_model,
+                            elapsed=gate.reply.elapsed,
+                            tokens=gate.reply.total_tokens,
+                        )
+                    )
+                    continue
+
+            with stage(tracer, "extract", f"{model} one fact per call") as span:
                 try:
-                    gate = triage(
+                    extraction = extract(
                         excerpt,
-                        model=triage_model,
+                        model=model,
                         host=config.ollama_host,
                         timeout=config.ollama_timeout,
                         section=chunk.section,
                         keep_alive=keep_alive,
                     )
+                except (ModelSchemaError, ModelOutputError) as exc:
+                    LOGGER.warning("%s p.%s: %s", manual.path.name, chunk.page, exc)
+                    candidates.append(
+                        Candidate(
+                            manual_slug=manual.slug,
+                            manual_path=manual.path.name,
+                            page=chunk.page,
+                            section=chunk.section,
+                            excerpt=excerpt,
+                            task="",
+                            quote="",
+                            verdict=Verdict(
+                                status="REJECT",
+                                reason="schema_invalid",
+                                page=chunk.page,
+                                section=chunk.section,
+                            ),
+                            model_id=model,
+                        )
+                    )
+                    continue
                 except OllamaUnavailableError:
                     raise
                 except ModelError as exc:
-                    LOGGER.warning(
-                        "%s p.%s: triage failed (%s); extracting anyway",
-                        manual.path.name,
-                        chunk.page,
-                        exc,
-                    )
-                else:
-                    if not gate.has_interval:
-                        candidates.append(
-                            Candidate(
-                                manual_slug=manual.slug,
-                                manual_path=manual.path.name,
+                    LOGGER.warning("%s p.%s: %s", manual.path.name, chunk.page, exc)
+                    candidates.append(
+                        Candidate(
+                            manual_slug=manual.slug,
+                            manual_path=manual.path.name,
+                            page=chunk.page,
+                            section=chunk.section,
+                            excerpt=excerpt,
+                            task="",
+                            quote="",
+                            verdict=Verdict(
+                                status="REJECT",
+                                reason="model_timeout",
                                 page=chunk.page,
                                 section=chunk.section,
-                                excerpt=excerpt,
-                                task=gate.task,
-                                quote="",
-                                verdict=Verdict(
-                                    status=SKIP,
-                                    reason="no_interval_stated",
-                                    page=chunk.page,
-                                    section=chunk.section,
-                                ),
-                                model_id=triage_model,
-                                elapsed=gate.reply.elapsed,
-                                tokens=gate.reply.total_tokens,
-                            )
+                            ),
+                            model_id=model,
                         )
-                        continue
-
-            try:
-                extraction = extract(
-                    excerpt,
-                    model=model,
-                    host=config.ollama_host,
-                    timeout=config.ollama_timeout,
-                    section=chunk.section,
-                    keep_alive=keep_alive,
-                )
-            except (ModelSchemaError, ModelOutputError) as exc:
-                LOGGER.warning("%s p.%s: %s", manual.path.name, chunk.page, exc)
-                candidates.append(
-                    Candidate(
-                        manual_slug=manual.slug,
-                        manual_path=manual.path.name,
-                        page=chunk.page,
-                        section=chunk.section,
-                        excerpt=excerpt,
-                        task="",
-                        quote="",
-                        verdict=Verdict(
-                            status="REJECT",
-                            reason="schema_invalid",
-                            page=chunk.page,
-                            section=chunk.section,
-                        ),
-                        model_id=model,
                     )
+                    continue
+                span.set_token_usage(
+                    input_tokens=sum(reply.input_tokens for reply in extraction.replies),
+                    output_tokens=sum(reply.output_tokens for reply in extraction.replies),
                 )
-                continue
-            except OllamaUnavailableError:
-                raise
-            except ModelError as exc:
-                LOGGER.warning("%s p.%s: %s", manual.path.name, chunk.page, exc)
-                candidates.append(
-                    Candidate(
-                        manual_slug=manual.slug,
-                        manual_path=manual.path.name,
-                        page=chunk.page,
-                        section=chunk.section,
-                        excerpt=excerpt,
-                        task="",
-                        quote="",
-                        verdict=Verdict(
-                            status="REJECT",
-                            reason="model_timeout",
-                            page=chunk.page,
-                            section=chunk.section,
-                        ),
-                        model_id=model,
-                    )
-                )
-                continue
 
             output = extraction.output
-            verdict = verify(
-                output,
-                pages.get(chunk.page, chunk.text),
-                page=chunk.page,
-                section=chunk.section,
-            )
+            with stage(tracer, "verify", "locate -> expand -> re-parse") as span:
+                verdict = verify(
+                    output,
+                    pages.get(chunk.page, chunk.text),
+                    page=chunk.page,
+                    section=chunk.section,
+                )
+                span.set_data("verify.accepted", 1 if verdict.accepted else 0)
             candidates.append(
                 Candidate(
                     manual_slug=manual.slug,
@@ -260,67 +292,14 @@ def scan_manual(
                     retries=extraction.retries,
                 )
             )
-    return ManualScan(candidates=candidates, chunks=chunks)
-
-
-def scan_corpus(
-    directory: Path,
-    *,
-    config: Config,
-    model: str = DEFAULT_EXTRACTOR,
-    triage_model: str | None = DEFAULT_TRIAGE,
-    use_triage: bool = False,
-    threshold: int = prefilter.DEFAULT_THRESHOLD,
-    slugs: dict[str, str] | None = None,
-    keep_alive: str | int | None = None,
-    on_manual: Callable[[Manual], None] | None = None,
-) -> ScanResult:
-    """Scan a directory of manuals end to end.
-
-    A manual that fails to read is skipped and recorded. A model call that
-    fails becomes a rejected candidate. Neither stops the batch.
-    """
-    import time
-
-    started = time.monotonic()
-    ingested = ingest_directory(Path(directory), slugs=slugs)
-    result = ScanResult(manuals=list(ingested.manuals), skipped=list(ingested.skipped))
-
-    for manual in ingested.manuals:
-        LOGGER.info("scanning %s (%d pages)", manual.path.name, manual.page_count)
-        if on_manual is not None:
-            on_manual(manual)
-        candidates = scan_manual(
-            manual,
-            config=config,
-            model=model,
-            triage_model=triage_model,
-            use_triage=use_triage,
-            threshold=threshold,
-            keep_alive=keep_alive,
-        )
-        result.candidates.extend(candidates.candidates)
-        result.chunks += candidates.chunks
-        result.tokens += sum(candidate.tokens for candidate in candidates.candidates)
-        result.model_calls += len(candidates.candidates)
-
-    result.seconds = time.monotonic() - started
-    LOGGER.info(
-        "scan finished: %d manuals, %d chunks, %d candidates, %d tokens, %.1fs",
-        len(result.manuals),
-        result.chunks,
-        len(result.candidates),
-        result.tokens,
-        result.seconds,
-    )
-    return result
+    return ManualScan(candidates=candidates, chunks=len(wanted))
 
 
 __all__ = [
     "Candidate",
     "ManualScan",
     "ScanResult",
-    "scan_corpus",
     "scan_manual",
+    "stage",
     "PROMPT_VERSION",
 ]

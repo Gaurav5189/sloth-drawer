@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -49,6 +50,32 @@ class SkippedRow:
     file: str
     reason: str
     detail: str
+
+
+@dataclass(frozen=True)
+class ManualSummary:
+    """One manual's contribution to the report.
+
+    This is the intermediate the batch runner checkpoints: it is enough to
+    rebuild the whole report without keeping every candidate in memory, so a
+    run that resumes after a crash still reports the same totals.
+    """
+
+    manual: str
+    device: str
+    slug: str
+    candidates: int = 0
+    passed: int = 0
+    repaired: int = 0
+    rejected: int = 0
+    skipped: int = 0
+    chunks: int = 0
+    seconds: float = 0.0
+    tokens: int = 0
+    rejection_reasons: dict[str, int] = field(default_factory=dict)
+    #: Set when the file was never read; ``None`` when it produced a result.
+    skipped_reason: str | None = None
+    skipped_detail: str = ""
 
 
 @dataclass(frozen=True)
@@ -160,6 +187,81 @@ class Report:
         return "\n".join(lines) + "\n"
 
 
+def from_summaries(
+    summaries: Sequence[ManualSummary],
+    *,
+    model_id: str,
+    backend: str,
+    prompt_version: int,
+    generated_at: str | None = None,
+    cost_usd: float = 0.0,
+    chunks: int | None = None,
+    seconds: float | None = None,
+    tokens: int | None = None,
+) -> Report:
+    """Assemble the report from one summary per manual.
+
+    ``chunks``/``seconds``/``tokens`` default to the sum of the summaries, but a
+    caller that measured them globally (a single scan) may pass them in.
+    """
+    rows: list[DeviceRow] = []
+    skipped_files: list[SkippedRow] = []
+    reasons: Counter[str] = Counter()
+    manuals = 0
+    skipped_manuals = 0
+
+    for summary in summaries:
+        if summary.skipped_reason is not None:
+            skipped_manuals += 1
+            skipped_files.append(
+                SkippedRow(
+                    file=summary.manual,
+                    reason=summary.skipped_reason,
+                    detail=summary.skipped_detail,
+                )
+            )
+        else:
+            manuals += 1
+        rows.append(
+            DeviceRow(
+                manual=summary.manual,
+                device=summary.device,
+                slug=summary.slug,
+                candidates=summary.candidates,
+                passed=summary.passed,
+                repaired=summary.repaired,
+                rejected=summary.rejected,
+                skipped=summary.skipped,
+            )
+        )
+        for reason, count in summary.rejection_reasons.items():
+            reasons[reason] += count
+
+    passed = sum(summary.passed for summary in summaries)
+    repaired = sum(summary.repaired for summary in summaries)
+    return Report(
+        generated_at=generated_at or now_iso(),
+        model_id=model_id,
+        prompt_version=prompt_version,
+        backend=backend,
+        manuals=manuals,
+        skipped_manuals=skipped_manuals,
+        chunks=chunks if chunks is not None else sum(s.chunks for s in summaries),
+        candidates=sum(summary.candidates for summary in summaries),
+        found=passed + repaired,
+        passed=passed,
+        repaired=repaired,
+        rejected=sum(summary.rejected for summary in summaries),
+        skipped=sum(summary.skipped for summary in summaries),
+        seconds=seconds if seconds is not None else sum(s.seconds for s in summaries),
+        tokens=tokens if tokens is not None else sum(s.tokens for s in summaries),
+        cost_usd=cost_usd,
+        rejection_reasons=dict(reasons),
+        devices=tuple(rows),
+        skipped_files=tuple(skipped_files),
+    )
+
+
 def from_scan(
     result: ScanResult,
     devices: tuple[Device, ...] = (),
@@ -170,7 +272,7 @@ def from_scan(
     generated_at: str | None = None,
     cost_usd: float = 0.0,
 ) -> Report:
-    """Turn one scan into the report.
+    """Turn one in-memory scan into the report.
 
     A manual the scan never read still gets a row, so a skipped file cannot
     disappear from the totals.
@@ -178,23 +280,21 @@ def from_scan(
     names = {device.slug: device.name for device in devices}
     # A manual that was never read still has a device, if the registry knows it.
     by_manual = {device.manual_path: device for device in devices if device.manual_path is not None}
-    counts: Counter[str] = Counter()
-    reasons: Counter[str] = Counter()
     per_manual: dict[str, Counter[str]] = {}
+    reasons: dict[str, Counter[str]] = {}
 
     for candidate in result.candidates:
-        counts[candidate.status] += 1
         per_manual.setdefault(candidate.manual_path, Counter())[candidate.status] += 1
         # Only a REJECT is a rejection. A triage SKIP is the gate saying "no",
         # which is a different outcome with a different meaning.
         if candidate.status == "REJECT" and candidate.verdict.reason:
-            reasons[candidate.verdict.reason] += 1
+            reasons.setdefault(candidate.manual_path, Counter())[candidate.verdict.reason] += 1
 
-    rows: list[DeviceRow] = []
+    summaries: list[ManualSummary] = []
     for manual in result.manuals:
         tally = per_manual.get(manual.path.name, Counter())
-        rows.append(
-            DeviceRow(
+        summaries.append(
+            ManualSummary(
                 manual=manual.path.name,
                 device=names.get(manual.slug, manual.slug),
                 slug=manual.slug,
@@ -203,48 +303,30 @@ def from_scan(
                 repaired=tally.get("REPAIR", 0),
                 rejected=tally.get("REJECT", 0),
                 skipped=tally.get("SKIP", 0),
+                rejection_reasons=dict(reasons.get(manual.path.name, Counter())),
             )
         )
     for skipped in result.skipped:
         known = by_manual.get(skipped.path.name)
-        rows.append(
-            DeviceRow(
+        summaries.append(
+            ManualSummary(
                 manual=skipped.path.name,
                 device=known.name if known else skipped.path.name,
                 slug=known.slug if known else "",
-                candidates=0,
-                passed=0,
-                repaired=0,
-                rejected=0,
-                skipped=0,
+                skipped_reason=skipped.reason,
+                skipped_detail=skipped.detail,
             )
         )
-
-    passed = counts.get("PASS", 0)
-    repaired = counts.get("REPAIR", 0)
-    return Report(
-        generated_at=generated_at or now_iso(),
+    return from_summaries(
+        summaries,
         model_id=model_id,
-        prompt_version=prompt_version,
         backend=backend,
-        manuals=len(result.manuals),
-        skipped_manuals=len(result.skipped),
+        prompt_version=prompt_version,
+        generated_at=generated_at,
+        cost_usd=cost_usd,
         chunks=result.chunks,
-        candidates=len(result.candidates),
-        found=passed + repaired,
-        passed=passed,
-        repaired=repaired,
-        rejected=counts.get("REJECT", 0),
-        skipped=counts.get("SKIP", 0),
         seconds=result.seconds,
         tokens=result.tokens,
-        cost_usd=cost_usd,
-        rejection_reasons=dict(reasons),
-        devices=tuple(rows),
-        skipped_files=tuple(
-            SkippedRow(file=item.path.name, reason=item.reason, detail=item.detail)
-            for item in result.skipped
-        ),
     )
 
 

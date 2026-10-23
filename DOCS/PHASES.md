@@ -132,29 +132,49 @@
 
 ## Phase 3 — Batch, tracing, and the offline proof
 **Goal:** the whole corpus runs unattended, with traces, with the network off.
-**Estimate:** ~2.5 h · **Deadline:** Sun 25 Oct, morning
+**Estimate:** ~2.5 h · **Deadline:** Sun 25 Oct, morning · **Status: complete (2026-10-23)**, except the
+Sentry trace screenshot (needs a real DSN) and the backend parity run (needs the Phase 4 Tiger backend)
 
 ### Tasks
-- [ ] (~45 min) Batch runner — one transaction per manual, resumable, progress output, skip-and-continue
-- [ ] (~30 min) `observability/sentry.py` — optional; `sentry_sdk.init(dsn=..., traces_sample_rate=1.0)`,
-      one transaction per manual, a span per stage, `gen_ai.usage.*` token attributes; no-op without a DSN
-- [ ] (~15 min) Import it in the pipeline, but **only** the spans — never the prompt text or the model output
-- [ ] (~30 min) **The offline proof** — run the full corpus with the network disabled
-      (`unshare -n` or by setting a bogus proxy) and record the output. This is the post's strongest proof
-- [ ] (~30 min) Re-run the model benchmark (`bench/`) and capture the final table, including the
+- [x] (~45 min) Batch runner — `batch.py`: one transaction per manual
+      (`storage.db.store_manual`), resumable via `out/batch.json` keyed on the manual's SHA-256
+      (`scan --resume`), a progress line per manual (`scan --force` starts fresh), skip-and-continue at
+      both the file level and the model-call level. The report is rebuilt from the checkpoint, so a
+      resumed run reports what an unbroken one would
+- [x] (~30 min) `observability/base.py` + `observability/sentry.py` — optional;
+      `sentry_sdk.init(dsn=..., traces_sample_rate=1.0)`, one transaction per manual, a span per stage,
+      `gen_ai.usage.*` token attributes; a real no-op tracer without a DSN, and a lazy import so the
+      extra is never needed on the core path
+- [x] (~15 min) Imported into the pipeline, **only** the spans — `pipeline.stage()` wraps `chunk`,
+      `prefilter`, `triage`, `extract`, `verify`; `batch` adds `ingest` and `persist`. The `Span`
+      protocol exposes only `set_data(number)` and `set_token_usage`, so prompt text and model output
+      are unrepresentable
+- [x] (~30 min) **The offline proof** — the full corpus with the network disabled. `unshare -n` is not
+      permitted on the reference box, so the run happens in a user+network namespace (`unshare -rn`)
+      with only `lo` configured, a second Ollama served inside it, and no route to anything external.
+      Output in `out/scan-offline.txt`
+- [x] (~30 min) Re-ran the model benchmark (`bench/`) and captured the final table, including the
       `gemma3:270m` failure and the `phi4-mini` timings
-- [ ] (~30 min) **Backend parity run** — scan the corpus twice, once on the local backend and once on
-      Tiger Cloud, and diff the resulting cards. Any divergence is a bug. Record the comparison in
-      `out/report.md`; it is post material
-- [ ] (~15 min) `tests/test_retrieval_parity.py` — the parity check, skipped when no DSN is configured
-- [ ] (~20 min) `README.md` — what it is, a 60-second quickstart, the sample output, the honest limitations
+- [ ] (~30 min) **Backend parity run** — **deferred to Phase 4**, deliberately. It scans the corpus on
+      both the local and Tiger backends and diffs the cards, and the Tiger backend (`retrieval/tiger.py`)
+      is a Phase 4 deliverable, so running it now would compare a backend against itself. The parity
+      *test* ships now (see below); the run happens once both backends exist
+- [x] (~15 min) `tests/test_retrieval_parity.py` — the parity check. The local half always runs; the
+      cloud half skips with its reason until `retrieval/tiger.py` exists, so the harness is never a
+      silently-passing no-op
+- [x] (~20 min) `README.md` — what it is, a 60-second quickstart, the sample card, the report table, and
+      the honest limitations (13 REPAIRs, 7 rejections, 4 manuals with no text layer)
 
 ### Exit criteria
-- [ ] A 12-manual corpus completes unattended in ≤ 30 min on the reference box
-- [ ] The offline run succeeds with the network down
-- [ ] A Sentry trace screenshot exists showing per-stage spans, latency, and token counts
-- [ ] The benchmark table in the post is exactly what `bench/` printed
-- [ ] `MEMORY.md` updated
+- [x] A 12-manual corpus completes unattended in ≤ 30 min on the reference box — **19 manuals in
+      614 s (10:14)**, 35 found / 22 PASS / 13 REPAIR / 7 REJECT
+- [x] The offline run succeeds with the network down — full corpus in a user+network namespace with
+      only `lo` (`out/scan-offline.txt`), identical verdicts
+- [ ] A Sentry trace screenshot exists showing per-stage spans, latency, and token counts — **the code
+      is in place and tested, but a screenshot needs a real `SLOTH_SENTRY_DSN` and a Sentry project.
+      Capture it in Phase 5; the tracing is a no-op without one**
+- [x] The benchmark table in the post is exactly what `bench/` printed — `out/bench-phase3.txt`
+- [x] `MEMORY.md` updated
 
 ---
 

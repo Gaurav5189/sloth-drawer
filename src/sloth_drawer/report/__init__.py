@@ -8,18 +8,22 @@ from __future__ import annotations
 
 from sloth_drawer.report.build import (
     DeviceRow,
+    ManualSummary,
     Report,
     SkippedRow,
     from_scan,
+    from_summaries,
     load_report,
     write_report,
 )
 
 __all__ = [
     "DeviceRow",
+    "ManualSummary",
     "Report",
     "SkippedRow",
     "from_scan",
+    "from_summaries",
     "load_report",
     "write_report",
 ]

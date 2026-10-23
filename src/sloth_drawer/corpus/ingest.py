@@ -169,12 +169,11 @@ def slug_from_filename(path: Path) -> str:
     return slug or "manual"
 
 
-def ingest_directory(directory: Path, slugs: dict[str, str] | None = None) -> IngestResult:
-    """Read every PDF in a directory.
+def list_pdfs(directory: Path) -> list[Path]:
+    """Every PDF in a directory, sorted.
 
-    ``slugs`` maps a filename to the device slug from the registry, so the
-    manual is attributed to the right device. Files with no registry entry are
-    still read, under a slug derived from their filename.
+    A directory with no PDFs is a configuration error, not an empty run: the
+    user asked for a scan and there is nothing to scan (RULES.md 2.4).
     """
     directory = Path(directory)
     if not directory.is_dir():
@@ -183,6 +182,17 @@ def ingest_directory(directory: Path, slugs: dict[str, str] | None = None) -> In
     pdfs = sorted(p for p in directory.glob("*.pdf") if p.is_file())
     if not pdfs:
         raise ConfigError(f"No PDFs found in {directory}")
+    return pdfs
+
+
+def ingest_directory(directory: Path, slugs: dict[str, str] | None = None) -> IngestResult:
+    """Read every PDF in a directory.
+
+    ``slugs`` maps a filename to the device slug from the registry, so the
+    manual is attributed to the right device. Files with no registry entry are
+    still read, under a slug derived from their filename.
+    """
+    pdfs = list_pdfs(directory)
 
     manuals: list[Manual] = []
     skipped: list[Skipped] = []

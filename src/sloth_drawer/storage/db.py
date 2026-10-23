@@ -20,7 +20,8 @@ from __future__ import annotations
 
 import sqlite3
 import tomllib
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -265,8 +266,12 @@ def manual_index(devices: tuple[Device, ...]) -> dict[str, str]:
     return {device.manual_path: device.slug for device in devices if device.manual_path is not None}
 
 
-def upsert_device(connection: sqlite3.Connection, device: Device) -> int:
-    """Insert or refresh a device, and return its row id."""
+def upsert_device(connection: sqlite3.Connection, device: Device, *, commit: bool = True) -> int:
+    """Insert or refresh a device, and return its row id.
+
+    ``commit=False`` leaves the write inside the caller's open transaction, so a
+    batch can commit one manual's device and intervals together (RULES.md 2.6).
+    """
     try:
         cursor = connection.execute(
             "INSERT INTO devices ("
@@ -288,9 +293,11 @@ def upsert_device(connection: sqlite3.Connection, device: Device) -> int:
             ),
         )
         row = cursor.fetchone()
-        connection.commit()
+        if commit:
+            connection.commit()
     except sqlite3.Error as exc:
-        connection.rollback()
+        if commit:
+            connection.rollback()
         raise StorageError(f"Could not store the device {device.slug!r}: {exc}") from exc
     if row is None:
         raise StorageError(f"Could not store the device {device.slug!r}.")
@@ -312,8 +319,13 @@ def upsert_interval(
     reject_reason: str | None,
     model_id: str,
     prompt_hash: str | None = None,
+    commit: bool = True,
 ) -> int:
-    """Insert or refresh one interval. Re-scanning the same manual changes nothing."""
+    """Insert or refresh one interval. Re-scanning the same manual changes nothing.
+
+    ``commit=False`` keeps the write inside the caller's transaction; see
+    :func:`store_manual`.
+    """
     try:
         cursor = connection.execute(
             "INSERT INTO intervals ("
@@ -344,13 +356,55 @@ def upsert_interval(
             ),
         )
         row = cursor.fetchone()
-        connection.commit()
+        if commit:
+            connection.commit()
     except sqlite3.Error as exc:
-        connection.rollback()
+        if commit:
+            connection.rollback()
         raise StorageError(f"Could not store an interval for device {device_id}: {exc}") from exc
     if row is None:
         raise StorageError(f"Could not store an interval for device {device_id}.")
     return int(row[0])
+
+
+@dataclass(frozen=True)
+class IntervalWrite:
+    """One interval ready to store, exactly as the verifier left it."""
+
+    task: str
+    section: str | None
+    page: int | None
+    interval_months: float | None
+    model_interval_months: float | None
+    evidence: str | None
+    model_quote: str | None
+    verdict: str
+    reject_reason: str | None
+    model_id: str
+    prompt_hash: str | None = None
+
+
+def store_manual(
+    connection: sqlite3.Connection,
+    device: Device,
+    intervals: Sequence[IntervalWrite],
+) -> int:
+    """Write one manual's device row and intervals in a single transaction.
+
+    This is the batch runner's unit of durability (RULES.md 2.6): either the
+    whole manual lands, or none of it does, so a crash mid-corpus leaves the
+    previous manual committed and the current one absent. Returns the device id.
+    """
+    try:
+        with connection:  # commits on success, rolls back on any exception
+            device_id = upsert_device(connection, device, commit=False)
+            for interval in intervals:
+                upsert_interval(connection, device_id, commit=False, **asdict(interval))
+    except sqlite3.Error as exc:
+        raise StorageError(
+            f"Could not store the manual {device.slug!r} in one transaction: {exc}"
+        ) from exc
+    return device_id
 
 
 def record_run(connection: sqlite3.Connection, run: RunRecord) -> int:
