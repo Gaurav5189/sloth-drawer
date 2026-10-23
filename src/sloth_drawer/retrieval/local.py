@@ -17,6 +17,7 @@ normalised and it is not comparable with the cloud backend's fused score.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Sequence
 from pathlib import Path
 
 from sloth_drawer.errors import StorageError
@@ -71,7 +72,7 @@ class LocalRetriever:
         self,
         manual_sha: str,
         device_slug: str,
-        chunks: list[tuple[int, str | None, str]],
+        chunks: Sequence[tuple[int, str | None, str]],
     ) -> int:
         """Add chunks to the index. Returns how many rows were written."""
         rows = [
@@ -89,6 +90,25 @@ class LocalRetriever:
         except sqlite3.Error as exc:
             raise StorageError(f"Could not index the chunks: {exc}") from exc
         return len(rows)
+
+    def index_chunks(
+        self,
+        manual_sha: str,
+        device_slug: str,
+        chunks: Sequence[tuple[int, str | None, str]],
+    ) -> dict[str, int]:
+        """Index a manual's chunks and report the tally in the shared shape.
+
+        The cloud backend reports ``indexed``/``embed_failed``/``index_failed``
+        per chunk; the local backend writes in one statement, so its only
+        failure mode is the batch failing, which becomes ``index_failed`` for
+        every chunk that did not land (RULES.md 2.4a: recorded, never silent).
+        """
+        try:
+            indexed = self.index(manual_sha, device_slug, chunks)
+        except StorageError:
+            return {"indexed": 0, "embed_failed": 0, "index_failed": len(chunks)}
+        return {"indexed": indexed, "embed_failed": 0, "index_failed": 0}
 
     def search(self, query: str, k: int) -> list[ChunkRef]:
         """Find the chunks most relevant to a query.

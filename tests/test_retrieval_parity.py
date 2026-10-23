@@ -76,22 +76,40 @@ def test_a_part_number_reaches_the_expected_chunk() -> None:
     assert "DX-CF14" in hits[0].content
 
 
-def test_both_backends_return_the_same_top_chunk_for_the_same_query() -> None:
-    """The invariant from RULES.md §6, one query at a time."""
-    local = _local()
+def test_both_backends_reach_the_same_chunks_over_one_corpus() -> None:
+    """The invariant from RULES.md §6 — over the *real* corpus, both sides.
+
+    A parity check against the tiny unit fixture would be comparing two corpora,
+    not two backends: the cloud index holds `data/manuals`, so the local side of
+    this test builds the same in-memory index `bench/parity.py` does. The
+    invariant is the honest window one the bench run established — the ranks
+    differ on purpose (RRF fusion vs strict-conjunctive FTS5), but every chunk
+    the local window returns must be reachable from the cloud window, because a
+    card cites one chunk and both backends owe that chunk.
+    """
+    import sys
+    from pathlib import Path
+
+    _tiger()  # skips with the reason unless the DSN is set
+    root = Path(__file__).resolve().parents[1]
+    sys.path.insert(0, str(root))
+    from bench.parity import LOCAL_WINDOW, QUERIES, TIGER_WINDOW, build_local
+
+    if not (root / "data" / "manuals").is_dir():
+        pytest.skip("data/manuals missing; the shared-corpus parity run needs it")
+
+    local, _note = build_local()
     tiger = _tiger()
 
     for query in QUERIES:
-        local_hits = local.search(query, k=5)
-        cloud_hits = tiger.search(query, k=5)
-        assert local_hits and cloud_hits, f"a backend returned nothing for {query!r}"
-
-        local_top = (local_hits[0].page, local_hits[0].content)
+        local_hits = local.search(query, k=LOCAL_WINDOW)
+        cloud_hits = tiger.search(query, k=TIGER_WINDOW)
         cloud_pages = {(hit.page, hit.content) for hit in cloud_hits}
-        assert local_top in cloud_pages, (
-            f"for {query!r} the local top hit {local_top[0]} is absent from the "
-            f"cloud top-5 {sorted(page for page, _ in cloud_pages)}"
-        )
+        for hit in local_hits:
+            assert (hit.page, hit.content) in cloud_pages, (
+                f"for {query!r} the local hit on page {hit.page} is absent from "
+                f"the cloud top-{TIGER_WINDOW}"
+            )
 
 
 def test_each_backend_names_itself() -> None:

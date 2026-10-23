@@ -23,6 +23,8 @@ from sloth_drawer.errors import (
     EXIT_OK,
     EXIT_PARTIAL,
     ConfigError,
+    CorpusError,
+    NoTextLayerError,
     SlothDrawerError,
 )
 from sloth_drawer.models import (
@@ -33,6 +35,7 @@ from sloth_drawer.models import (
     model_registry,
     require_model,
 )
+from sloth_drawer.retrieval.base import ChunkIndexer
 
 LOGGER = logging.getLogger("sloth_drawer")
 
@@ -150,6 +153,16 @@ def build_parser() -> argparse.ArgumentParser:
     report = subcommands.add_parser("report", help="print the accuracy table from the last scan")
     report.add_argument("--json", action="store_true", help="print report.json instead")
     report.set_defaults(handler=_cmd_report)
+
+    index = subcommands.add_parser(
+        "index",
+        help=(
+            "chunk every manual and write the retrieval index: local SQLite FTS5 "
+            "by default, or the Tiger Cloud hybrid index when SLOTH_DATABASE_URL is set"
+        ),
+    )
+    index.add_argument("directory", help="the folder holding the manual PDFs")
+    index.set_defaults(handler=_cmd_index)
 
     return parser
 
@@ -330,6 +343,64 @@ def _cmd_done(args: argparse.Namespace, config: Config) -> int:
         print("No interval to schedule from; the card will show no due date.")
     else:
         print(f"Next due {format_date(due)} (every {match.display})")
+    return EXIT_OK
+
+
+def _cmd_index(args: argparse.Namespace, config: Config) -> int:
+    """Chunk every manual and write the retrieval index behind the backends.
+
+    Both backends sit behind the same ``index_chunks`` call, exactly as in a
+    scan; running it on its own is how the corpus is (re)built for a parity
+    run or for a fresh machine, without paying for the model extraction again.
+    """
+    from sloth_drawer.corpus.chunk import chunk_manual
+    from sloth_drawer.corpus.ingest import list_pdfs, read_manual, sha256_of, slug_from_filename
+
+    directory = Path(args.directory)
+    if not directory.is_dir():
+        raise ConfigError(f"Manual directory not found: {directory}")
+
+    if config.use_tiger:
+        from sloth_drawer.vector.indexer import CloudIndex
+
+        cloud: ChunkIndexer = CloudIndex.from_env(config)
+        backend = cloud
+    else:
+        from sloth_drawer.retrieval.local import LocalRetriever
+        from sloth_drawer.storage.db import open_db
+
+        connection = open_db(config.paths.db)
+        local: ChunkIndexer = LocalRetriever(connection)
+        backend = local
+
+    print(f"Indexing {directory} → {backend.name} backend", flush=True)
+    totals = {"indexed": 0, "embed_failed": 0, "index_failed": 0, "skipped": 0}
+    try:
+        for path in list_pdfs(directory):
+            slug = slug_from_filename(path)
+            try:
+                manual = read_manual(path, slug)
+            except (CorpusError, NoTextLayerError) as exc:
+                totals["skipped"] += 1
+                print(f"  skipped {path.name}: {exc}", flush=True)
+                continue
+            chunks = [
+                (chunk.page, chunk.section, chunk.text) for chunk in chunk_manual(manual.pages)
+            ]
+            counts = backend.index_chunks(sha256_of(path), slug, chunks)
+            for key in ("indexed", "embed_failed", "index_failed"):
+                totals[key] += counts.get(key, 0)
+            print(f"  {path.name}: {counts['indexed']} chunks", flush=True)
+    finally:
+        if not config.use_tiger:
+            connection.close()
+    print(
+        f"\n{totals['indexed']} chunks indexed · "
+        f"{totals['embed_failed']} embed_failed · {totals['index_failed']} index_failed · "
+        f"{totals['skipped']} manuals skipped"
+    )
+    if totals["embed_failed"] or totals["index_failed"] or totals["skipped"]:
+        return EXIT_PARTIAL
     return EXIT_OK
 
 

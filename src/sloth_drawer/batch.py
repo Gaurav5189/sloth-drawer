@@ -32,6 +32,7 @@ from pathlib import Path
 
 from sloth_drawer.config import Config
 from sloth_drawer.corpus import prefilter
+from sloth_drawer.corpus.chunk import chunk_manual
 from sloth_drawer.corpus.ingest import list_pdfs, read_manual, sha256_of, slug_from_filename
 from sloth_drawer.errors import ConfigError, CorpusError, NoTextLayerError, StorageError
 from sloth_drawer.extract.prompts import PROMPT_VERSION
@@ -39,6 +40,7 @@ from sloth_drawer.models import DEFAULT_EXTRACTOR, DEFAULT_TRIAGE
 from sloth_drawer.observability.base import NoOpTracer, Tracer
 from sloth_drawer.pipeline import Candidate, scan_manual, stage
 from sloth_drawer.report.build import ManualSummary, Report, from_summaries, write_report
+from sloth_drawer.retrieval.base import ChunkIndexer
 from sloth_drawer.storage.db import (
     Device,
     IntervalWrite,
@@ -82,6 +84,8 @@ class ManualOutcome:
     rejected: int = 0
     skipped: int = 0
     rejection_reasons: dict[str, int] = field(default_factory=dict)
+    embed_failed: int = 0
+    index_failed: int = 0
     seconds: float = 0.0
     tokens: int = 0
 
@@ -112,6 +116,8 @@ class ManualOutcome:
                 "rejected",
                 "skipped",
                 "rejection_reasons",
+                "embed_failed",
+                "index_failed",
                 "seconds",
                 "tokens",
             )
@@ -326,9 +332,34 @@ def _summary(outcome: ManualOutcome, by_manual: dict[str, Device]) -> ManualSumm
         seconds=outcome.seconds,
         tokens=outcome.tokens,
         rejection_reasons=dict(outcome.rejection_reasons),
+        embed_failed=outcome.embed_failed,
+        index_failed=outcome.index_failed,
         skipped_reason=outcome.reason if skipped else None,
         skipped_detail=outcome.detail if skipped else "",
     )
+
+
+def _open_index_backend(
+    config: Config, connection: sqlite3.Connection | None
+) -> ChunkIndexer | None:
+    """The chunk index the run writes to, or ``None`` without a state database.
+
+    Configuration decides (RULES.md 6): ``tiger`` when the DSN is set, local
+    FTS5 otherwise, both behind the same ``index_chunks`` call. A cloud backend
+    that cannot be reached fails the run *here*, with the remediation in the
+    message — never as a silent per-manual degradation (RULES.md 2.4a).
+    """
+    if connection is None:
+        return None
+    if config.use_tiger:
+        from sloth_drawer.vector.indexer import CloudIndex
+
+        cloud: ChunkIndexer = CloudIndex.from_env(config)
+        return cloud
+    from sloth_drawer.retrieval.local import LocalRetriever
+
+    local: ChunkIndexer = LocalRetriever(connection)
+    return local
 
 
 def _scan_one(
@@ -343,6 +374,7 @@ def _scan_one(
     threshold: int,
     keep_alive: str | int | None,
     connection: sqlite3.Connection | None,
+    index_backend: ChunkIndexer | None = None,
     tracer: Tracer,
 ) -> tuple[ManualOutcome, list[Candidate]]:
     """Read, scan and persist a single manual inside one transaction."""
@@ -393,6 +425,25 @@ def _scan_one(
                 )
 
         tally = _tally(scanned.candidates)
+        embed_failed = 0
+        index_failed = 0
+        if index_backend is not None:
+            # The retrieval backend gets chunk text (page, section, content)
+            # and nothing else: this call is the whole cloud boundary
+            # (RULES.md 3.1a). A failed chunk is recorded, never a crash — but
+            # it *is* a partial outcome, so the report and the exit code say so.
+            with stage(tracer, "index", "chunks -> retrieval backend") as span:
+                counts = index_backend.index_chunks(
+                    sha256,
+                    slug,
+                    [
+                        (chunk.page, chunk.section, chunk.text)
+                        for chunk in chunk_manual(manual.pages)
+                    ],
+                )
+                embed_failed = counts.get("embed_failed", 0)
+                index_failed = counts.get("index_failed", 0)
+                span.set_data("chunks.indexed", counts.get("indexed", 0))
         return (
             ManualOutcome(
                 manual=path.name,
@@ -407,6 +458,8 @@ def _scan_one(
                 rejected=tally.get("REJECT", 0),
                 skipped=tally.get("SKIP", 0),
                 rejection_reasons=_reasons(scanned.candidates),
+                embed_failed=embed_failed,
+                index_failed=index_failed,
                 seconds=seconds,
                 tokens=sum(candidate.tokens for candidate in scanned.candidates),
             ),
@@ -452,6 +505,7 @@ def run_batch(
     resumed = 0
     extracted: list[Candidate] = []
     connection = open_db(config.paths.db) if persist else None
+    index_backend = _open_index_backend(config, connection)
     try:
         for index, path in enumerate(pdfs, start=1):
             sha256 = sha256_of(path)
@@ -473,6 +527,7 @@ def run_batch(
                 threshold=threshold,
                 keep_alive=keep_alive,
                 connection=connection,
+                index_backend=index_backend,
                 tracer=tracer,
             )
             checkpoint.outcomes[path.name] = outcome

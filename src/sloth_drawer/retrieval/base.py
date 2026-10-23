@@ -10,6 +10,7 @@ is a bug in one of them, and the parity run in Phase 3 is what proves it.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
@@ -39,4 +40,25 @@ class Retriever(Protocol):
 
     def search(self, query: str, k: int) -> list[ChunkRef]:
         """Return the ``k`` chunks most relevant to ``query``."""
+        ...
+
+
+@runtime_checkable
+class ChunkIndexer(Protocol):
+    """The write side of a backend: both backends answer `index_chunks`.
+
+    ``LocalRetriever`` (FTS5) and ``CloudIndex`` (pgvector + pg_textsearch)
+    share this signature so the scan and the CLI never branch on which one
+    they hold (RULES.md 6).
+    """
+
+    name: str
+
+    def index_chunks(
+        self,
+        manual_sha: str,
+        device_slug: str,
+        chunks: Sequence[tuple[int, str | None, str]],
+    ) -> dict[str, int]:
+        """Index a manual's chunks and report the tally in the shared shape."""
         ...

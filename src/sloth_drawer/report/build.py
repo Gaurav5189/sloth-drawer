@@ -73,6 +73,9 @@ class ManualSummary:
     seconds: float = 0.0
     tokens: int = 0
     rejection_reasons: dict[str, int] = field(default_factory=dict)
+    #: The retrieval-backend write path, same shape for both backends.
+    embed_failed: int = 0
+    index_failed: int = 0
     #: Set when the file was never read; ``None`` when it produced a result.
     skipped_reason: str | None = None
     skipped_detail: str = ""
@@ -102,6 +105,10 @@ class Report:
     tokens: int
     cost_usd: float
     rejection_reasons: dict[str, int] = field(default_factory=dict)
+    #: Chunks the retrieval backend could not index. Zero on the local
+    #: backend's normal path; never silently zero when they exist (RULES.md 2.4a).
+    embed_failed: int = 0
+    index_failed: int = 0
     devices: tuple[DeviceRow, ...] = ()
     skipped_files: tuple[SkippedRow, ...] = ()
 
@@ -136,6 +143,10 @@ class Report:
             )
         lines.append("")
         lines.append(self.summary)
+        if self.embed_failed or self.index_failed:
+            lines.append(
+                f"indexing: {self.embed_failed} embed_failed · {self.index_failed} index_failed"
+            )
         if self.rejection_reasons:
             lines.append("")
             lines.append("Rejection reasons:")
@@ -171,6 +182,16 @@ class Report:
                 "",
             ]
         )
+        if self.embed_failed or self.index_failed:
+            lines.extend(
+                [
+                    "## Indexing failures",
+                    "",
+                    f"`embed_failed` {self.embed_failed} · `index_failed` {self.index_failed} "
+                    f"(backend `{self.backend}`).",
+                    "",
+                ]
+            )
         if self.rejection_reasons:
             lines.extend(
                 ["## Why candidates were rejected", "", "| Reason | Count |", "|---|---:|"]
@@ -257,6 +278,8 @@ def from_summaries(
         tokens=tokens if tokens is not None else sum(s.tokens for s in summaries),
         cost_usd=cost_usd,
         rejection_reasons=dict(reasons),
+        embed_failed=sum(s.embed_failed for s in summaries),
+        index_failed=sum(s.index_failed for s in summaries),
         devices=tuple(rows),
         skipped_files=tuple(skipped_files),
     )
@@ -369,6 +392,8 @@ def load_report(path: Path) -> Report:
         tokens=int(payload.get("tokens", 0)),
         cost_usd=float(payload.get("cost_usd", 0.0)),
         rejection_reasons=dict(payload.get("rejection_reasons") or {}),
+        embed_failed=int(payload.get("embed_failed", 0)),
+        index_failed=int(payload.get("index_failed", 0)),
         devices=tuple(DeviceRow(**row) for row in payload.get("devices") or ()),
         skipped_files=tuple(SkippedRow(**row) for row in payload.get("skipped_files") or ()),
     )
