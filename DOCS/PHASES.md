@@ -155,10 +155,9 @@ Sentry trace screenshot (needs a real DSN) and the backend parity run (needs the
       Output in `out/scan-offline.txt`
 - [x] (~30 min) Re-ran the model benchmark (`bench/`) and captured the final table, including the
       `gemma3:270m` failure and the `phi4-mini` timings
-- [ ] (~30 min) **Backend parity run** — **deferred to Phase 4**, deliberately. It scans the corpus on
-      both the local and Tiger backends and diffs the cards, and the Tiger backend (`retrieval/tiger.py`)
-      is a Phase 4 deliverable, so running it now would compare a backend against itself. The parity
-      *test* ships now (see below); the run happens once both backends exist
+- [x] (~30 min) **Backend parity run** — **deferred to Phase 4, and done there**: `bench/parity.py`
+      over the live corpus, 4/4 queries PARITY (see Phase 4 for the window invariant). The parity
+      test now compares both backends over the same corpus whenever `SLOTH_DATABASE_URL` is set
 - [x] (~15 min) `tests/test_retrieval_parity.py` — the parity check. The local half always runs; the
       cloud half skips with its reason until `retrieval/tiger.py` exists, so the harness is never a
       silently-passing no-op
@@ -183,14 +182,21 @@ Sentry trace screenshot (needs a real DSN) and the backend parity run (needs the
 **Estimate:** ~2.5 h · **Deadline:** Sun 25 Oct, afternoon
 
 ### Tasks
-- [ ] (~30 min) **Tiger Cloud setup** — `tiger auth login`, `tiger db uri` for the service URL, then
+- [x] (~30 min) **Tiger Cloud setup** — `tiger auth login`, `tiger db uri` for the service URL, then
       `CREATE EXTENSION IF NOT EXISTS vectorscale CASCADE;` and `CREATE EXTENSION IF NOT EXISTS
-      pg_textsearch;`. **Dev service or schema only.**
-- [ ] (~45 min) `vector/schema.sql` + `vector/indexer.py` — idempotent schema, chunk → `nomic-embed-text`
-      → upsert. Only manual text and embeddings may be written
-- [ ] (~30 min) `retrieval/tiger.py` — pgvector + `pg_textsearch` hybrid query with RRF (`k = 60`).
+      pg_textsearch;`. **Dev service or schema only.** Done: vector 0.8.7, pg_textsearch 1.5.1,
+      vectorscale 0.9.0 confirmed on the service
+- [x] (~45 min) `vector/schema.sql` + `vector/indexer.py` — idempotent schema, chunk → `nomic-embed-text`
+      → upsert. Only manual text and embeddings may be written. Done: live index run
+      `out/index-tiger.log` — 1323/1325 chunks, 0 embed_failed, 2 index_failed (recorded, not silent)
+- [x] (~30 min) `retrieval/tiger.py` — pgvector + `pg_textsearch` hybrid query with RRF (`k = 60`).
       Always `to_bm25query(text, 'index_name')`; never normalise the negative BM25 scores
-- [ ] (~1.5 h) Web UI — FastAPI + one page: device list, card preview, mark-done. No JS framework, no CDN
+- [x] (~1.5 h) Web UI — FastAPI + one page: device list, card preview, mark-done. No JS framework, no CDN.
+      Live route (render_card on request) over the same out/sloth.db; `sloth-drawer serve` boots it.
+      Card route is byte-identical to the CLI card, test-proved
+- [x] **Backend parity run** (the Phase 3 deferred task) — `bench/parity.py` over the live corpus,
+      4/4 queries PARITY under the window invariant (every local top-5 chunk reachable in the cloud
+      top-20; ranks differ on purpose — RRF fusion vs strict-conjunctive FTS5). Output: `out/parity-run.txt`
 - [ ] (~45 min) Deploy to **Render**; verify the cold start works, because the free tier sleeps
 - [ ] (~15 min) Claim the free **`.tech`** domain (`hacktoberfest.com/my/promos`) and point it at the demo
 - [ ] (~15 min) Optional: TabPFN forecast of annual service spend from your own history (**TabPFN** category) — stretch
@@ -198,7 +204,6 @@ Sentry trace screenshot (needs a real DSN) and the backend parity run (needs the
 
 ### Exit criteria
 - [ ] A live URL renders a device and its card
-- [ ] The `.tech` domain resolves to it  (**user note: this one is not required, so when you remove it from DOCS, remove this note also)
 - [ ] The category list is finalised and defensible — every entry genuinely used
 
 ---
