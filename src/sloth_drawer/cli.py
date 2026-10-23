@@ -35,6 +35,7 @@ from sloth_drawer.models import (
 LOGGER = logging.getLogger("sloth_drawer")
 
 if TYPE_CHECKING:  # pragma: no cover - import for the type checker only
+    from sloth_drawer.pipeline import Candidate
     from sloth_drawer.storage.db import Device
 
 
@@ -218,11 +219,30 @@ def _cmd_scan(args: argparse.Namespace, config: Config) -> int:
     return EXIT_OK
 
 
+#: How strongly a candidate claims the single row its ``(device, task, page)``
+#: key allows. A REJECT must never take a row a verified interval is holding;
+#: between two verified answers, PASS is the one the source agreed with.
+_PRIORITY = {"PASS": 2, "REPAIR": 1}
+
+
+def _outranks(candidate: Candidate, held: Candidate) -> bool:
+    """Whether ``candidate`` should take the one row its key allows.
+
+    An accepted answer beats a rejected one, and between two accepted answers
+    PASS beats REPAIR — a REPAIR is the one where the model's own number
+    disagreed with the source. Everything else keeps the old behaviour: the
+    later candidate wins.
+    """
+    return _PRIORITY.get(candidate.status, 0) >= _PRIORITY.get(held.status, 0)
+
+
 def _persist(result, devices, config: Config, *, model: str) -> None:
     """Store the intervals and the run, then write the report.
 
     Every write is idempotent, so a re-scan of the same manual updates the rows
-    in place rather than duplicating them.
+    in place rather than duplicating them. ``(device, task, page)`` is the row's
+    key (RULES.md 2.6) and candidates are not unique on it, so they are reduced
+    to one winner per key before anything is written.
     """
     from sloth_drawer.extract.prompts import PROMPT_VERSION
     from sloth_drawer.report.build import from_scan, write_report
@@ -236,9 +256,14 @@ def _persist(result, devices, config: Config, *, model: str) -> None:
     )
 
     connection = open_db(config.paths.db)
-    stored = 0
     try:
         ids = {device.slug: upsert_device(connection, device) for device in devices}
+        # Two excerpts of one chunk can name the same task, and every failed
+        # extraction is stored under the task name "". Upserting in scan order
+        # would let whichever of them lands last own the row — a REJECT taking
+        # the row of a verified interval leaves the report counting a PASS that
+        # no card can show.
+        chosen: dict[tuple[int, str, int], Candidate] = {}
         for candidate in result.candidates:
             device_id = ids.get(candidate.manual_slug)
             if device_id is None:
@@ -246,10 +271,16 @@ def _persist(result, devices, config: Config, *, model: str) -> None:
             if candidate.status == "SKIP":
                 # A triage "no" is not a fact about the manual; it is not stored.
                 continue
-            stored += 1
+            key = (device_id, candidate.task, candidate.page)
+            held = chosen.get(key)
+            if held is None or _outranks(candidate, held):
+                chosen[key] = candidate
+
+        stored = len(chosen)
+        for candidate in chosen.values():
             upsert_interval(
                 connection,
-                device_id,
+                ids[candidate.manual_slug],
                 task=candidate.task,
                 section=candidate.section,
                 page=candidate.page,
