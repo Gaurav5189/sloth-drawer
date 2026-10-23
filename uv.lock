@@ -2698,6 +2698,7 @@ observability = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "httpx2" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "ruff" },
@@ -2717,6 +2718,7 @@ provides-extras = ["observability", "forecast"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "httpx2", specifier = ">=2.16.0" },
     { name = "mypy", specifier = ">=1.11" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "ruff", specifier = ">=0.6" },

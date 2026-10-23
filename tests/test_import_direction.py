@@ -42,6 +42,8 @@ PACKAGE_RULES: dict[str, set[str]] = {
         "sloth_drawer.errors",
         "sloth_drawer.storage",
         "sloth_drawer.render",
+        # the package's own submodules (page rendering used by routes/app)
+        "sloth_drawer.web",
     },
 }
 

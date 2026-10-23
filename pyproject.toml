@@ -50,6 +50,7 @@ dev = [
   "pytest>=8.0",
   "ruff>=0.6",
   "mypy>=1.11",
+  "httpx2>=2.16.0",
 ]
 
 [tool.hatch.build.targets.wheel]

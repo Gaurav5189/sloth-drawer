@@ -164,6 +164,18 @@ def build_parser() -> argparse.ArgumentParser:
     index.add_argument("directory", help="the folder holding the manual PDFs")
     index.set_defaults(handler=_cmd_index)
 
+    serve = subcommands.add_parser(
+        "serve",
+        help="serve the web UI: device list, card preview, mark-done",
+    )
+    serve.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="the bind address (default: 127.0.0.1; use 0.0.0.0 on a deploy)",
+    )
+    serve.add_argument("--port", type=int, default=8000, help="the bind port (default: 8000)")
+    serve.set_defaults(handler=_cmd_serve)
+
     return parser
 
 
@@ -401,6 +413,29 @@ def _cmd_index(args: argparse.Namespace, config: Config) -> int:
     )
     if totals["embed_failed"] or totals["index_failed"] or totals["skipped"]:
         return EXIT_PARTIAL
+    return EXIT_OK
+
+
+def _cmd_serve(args: argparse.Namespace, config: Config) -> int:
+    """Serve the web UI: devices, cards and mark-done over the scan database.
+
+    The web surface reads exactly what the scan wrote — no model, no
+    retrieval, no network beyond the browser's own request — which is also
+    what makes it survive a cold start on a free-tier host.
+    """
+    import uvicorn
+
+    from sloth_drawer.web.app import create_app
+
+    if not config.paths.db.is_file():
+        raise ConfigError(
+            f"No scan data at {config.paths.db}. Run `sloth-drawer scan <dir>` first."
+        )
+    app = create_app(config.paths.db, config.paths.devices_toml)
+    print(f"Serving {app.title} on http://{args.host}:{args.port} (Ctrl+C to stop)", flush=True)
+    uvicorn.run(
+        app, host=args.host, port=args.port, log_level=args.log_level.lower(), access_log=False
+    )
     return EXIT_OK
 
 
