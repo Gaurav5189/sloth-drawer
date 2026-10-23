@@ -293,6 +293,7 @@ def test_resume_skips_an_unchanged_manual(config, tmp_path, monkeypatch) -> None
     assert outcome.resumed == 1
     assert outcome.processed == 0
     assert seen == ["resumed"]
+    assert outcome.candidates == ()  # `--list` therefore needs its resumed note
     assert outcome.report.manuals == 1
     assert outcome.report.found == 2
     assert outcome.report.seconds == 41.0

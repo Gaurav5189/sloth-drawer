@@ -220,6 +220,11 @@ def _cmd_scan(args: argparse.Namespace, config: Config) -> int:
     tracer.flush()
 
     if args.list:
+        if outcome.resumed:
+            print(
+                f"\nnote: {outcome.resumed} resumed manual(s) are not listed below; "
+                "their intervals are in the report and the database."
+            )
         _print_candidates(outcome.candidates)
 
     report = outcome.report

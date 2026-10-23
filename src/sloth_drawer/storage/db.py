@@ -167,6 +167,13 @@ def connect(path: Path) -> sqlite3.Connection:
     blocking a scan. ``foreign_keys`` is off by default in SQLite and must be
     turned on per connection.
     """
+    # Legacy transaction control (the default: no ``isolation_level=None`` and
+    # no ``autocommit=True``) is load-bearing here: the first DML statement of
+    # ``store_manual`` implicitly begins the one transaction per manual, and the
+    # ``with connection:`` block there commits or rolls it back wholesale.
+    # Switching to autocommit would break that atomicity — the test
+    # ``test_a_manual_is_written_in_one_transaction`` guards it.
+
     path = Path(path)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
