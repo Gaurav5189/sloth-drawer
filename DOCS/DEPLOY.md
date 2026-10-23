@@ -48,10 +48,12 @@ PDFs (the manuals are not ours to redistribute, RULES.md).
 ## Deploy (Render → Blueprint)
 
 1. Push the repo (with `deploy/seed/sloth.db` committed) to GitHub.
-2. In Render: **New → Blueprint**, select the repo. It reads
-   `deploy/render.yaml` (free plan, `./deploy/Containerfile`, health check
-   `/health`). Render's own build executes the same instructions you run with
-   podman locally — a Containerfile is build-tool-agnostic.
+2. In Render: **New → Blueprint**, select the repo. Blueprint looks for
+   `render.yaml` at the repository root by default, so **set the Blueprint
+   file path to `deploy/render.yaml`** — ours deliberately lives next to the
+   Containerfile and the seed script (free plan, `./deploy/Containerfile`,
+   health check `/health`). Render's own build executes the same instructions
+   you run with podman locally — a Containerfile is build-tool-agnostic.
 3. Deploy: first build runs `uv sync --frozen` — no compile steps, no cache
    poisoning; ~1-2 min. The boot is a `uvicorn` start reading one SQLite file.
 4. Verify the cold start: hit the URL, wait >15 min idle, hit it again. The

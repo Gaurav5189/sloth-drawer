@@ -33,7 +33,12 @@ ENV SLOTH_HOME=/app
 # The hand-edited registry. The manuals are NOT in the image (RULES.md:
 # the PDFs are not ours to redistribute) — the scan ran on the author's
 # machine, and the container serves its verified result.
-COPY data /app/data
+#
+# Copied file-by-file on purpose: a bare `COPY data /app/data` would sweep
+# `data/manuals/` (the PDFs) into the image as soon as they are in the build
+# context, and the runtime only ever reads this one registry file
+# (config.py builds both paths from SLOTH_HOME/data).
+COPY data/devices.toml /app/data/
 
 # The demo state: the scan's committed SQLite snapshot. Owned by the runtime
 # user — SQLite opens the file for writing (WAL mode creates -wal/-shm

@@ -197,10 +197,10 @@ Sentry trace screenshot (needs a real DSN) and the backend parity run (needs the
 - [x] **Backend parity run** (the Phase 3 deferred task) — `bench/parity.py` over the live corpus,
       4/4 queries PARITY under the window invariant (every local top-5 chunk reachable in the cloud
       top-20; ranks differ on purpose — RRF fusion vs strict-conjunctive FTS5). Output: `out/parity-run.txt`
-- [ ] (~45 min) Deploy to **Render** — assets ready (`deploy/render.yaml`, `deploy/Containerfile`,
-      `deploy/build-seed.sh`, `src/sloth_drawer/webapp.py` ASGI entry, `DOCS/DEPLOY.md`); the human
-      runs the Blueprint deploy from their Render account. **STATE SHIPS IN THE IMAGE**: run
-      deploy/build-seed.sh, commit deploy/seed/sloth.db, push. No DSN, no PDFs, no model in the deploy
+- [x] (~45 min) Deploy to **Render** — DONE: **https://sloth-drawer.onrender.com/** (blueprint from
+      `deploy/render.yaml`, built from `deploy/Containerfile`, **zero env variables by design**;
+      verified 2026-10-23: list 200 · device 200 · card 200 · /health ok). The deploy state ships in
+      the image; refresh it with `deploy/build-seed.sh`, then commit + push
 - [x] ~~Claim the free **`.tech`** domain~~ — **dropped by decision (2026-10-23)**: the user will
       not use a `.tech` domain on this project; the demo URL is the Render `onrender.com` URL
 - [x] Optional: TabPFN forecast — **skipped by decision**; the demo stays honest without a paid
@@ -211,7 +211,9 @@ Sentry trace screenshot (needs a real DSN) and the backend parity run (needs the
       **Entire/DEV** (the post + embedded agent session). `.tech` dropped by decision
 
 ### Exit criteria
-- [ ] A live URL renders a device and its card (deploy pending — everything else is ready)
+- [x] A live URL renders a device and its card. **Done:** https://sloth-drawer.onrender.com/ —
+      list 200 · device 200 · card 200 · /health ok (verified 2026-10-23). No env vars set: the
+      web surface needs none by design
 - [x] The category list is finalised and defensible — every entry genuinely used. **Done.**
 
 ---

@@ -31,6 +31,16 @@ DEVICE = Device(
     category="air_purifier",
 )
 ABSENT = Device(slug="never-scanned", name="Never Scanned", category="air_purifier")
+# A second *scanned* device whose manual text carries live HTML: the device
+# page must escape every manual-derived field, and its interval must not be
+# reachable through another device's Mark-done form.
+POISON = Device(
+    slug="levoit-core-200s",
+    name="Levoit Core 200s",
+    manufacturer="Levoit",
+    model="Core 200s",
+    category="air_purifier",
+)
 
 
 @pytest.fixture
@@ -44,6 +54,9 @@ def state(tmp_path: Path) -> Path:
         f'category = "{DEVICE.category}"\n'
         f'[[device]]\nslug = "{ABSENT.slug}"\nname = "{ABSENT.name}"\n'
         f'category = "{ABSENT.category}"\n'
+        f'[[device]]\nslug = "{POISON.slug}"\nname = "{POISON.name}"\n'
+        f'manufacturer = "{POISON.manufacturer}"\nmodel = "{POISON.model}"\n'
+        f'category = "{POISON.category}"\n'
     )
     connection = connect(db)
     migrate(connection)
@@ -58,6 +71,24 @@ def state(tmp_path: Path) -> Path:
                 interval_months=3,
                 model_interval_months=None,
                 evidence="Replace the pre-filter every 3 months.",
+                model_quote=None,
+                verdict="PASS",
+                reject_reason=None,
+                model_id="gemma3:4b",
+            )
+        ],
+    )
+    store_manual(
+        connection,
+        device=POISON,
+        intervals=[
+            IntervalWrite(
+                task="<script>alert('x')</script>",
+                section="5.1",
+                page=3,
+                interval_months=1,
+                model_interval_months=None,
+                evidence="<b>bold</b> markup straight out of the manual",
                 model_quote=None,
                 verdict="PASS",
                 reject_reason=None,
@@ -139,6 +170,41 @@ def test_a_bad_interval_is_a_recorded_404_not_a_crash(client: TestClient) -> Non
     response = client.post(f"/device/{DEVICE.slug}/done?interval_id=999")
     assert response.status_code == 404
     assert "No interval" in response.text
+
+
+def test_a_nonnumeric_interval_id_is_a_client_error(client: TestClient) -> None:
+    """A missing or garbage interval id is the caller's mistake: 400, not 500."""
+    absent = client.post(f"/device/{DEVICE.slug}/done")
+    assert absent.status_code == 400
+    garbage = client.post(f"/device/{DEVICE.slug}/done?interval_id=abc")
+    assert garbage.status_code == 400
+
+
+def test_another_cards_interval_cannot_be_done_from_this_one(client: TestClient) -> None:
+    """Pairing one device's URL with another device's task id must not log
+    service against the wrong card — the interval belongs to no form on the
+    requested page."""
+    response = client.post(f"/device/{DEVICE.slug}/done?interval_id=2", follow_redirects=False)
+    assert response.status_code == 404
+    assert "not on" in response.text
+    # And POISON's schedule really is untouched by the rejected attempt.
+    assert "no due date" in client.get(f"/device/{POISON.slug}").text
+
+
+def test_manual_text_is_escaped_on_the_device_page(client: TestClient) -> None:
+    """Manual text can carry anything (``<``, ``&``, …): the device page
+    escapes it everywhere it lands, the way the card renderer always has."""
+    body = client.get(f"/device/{POISON.slug}").text
+    assert "<script>" not in body and "<b>bold</b>" not in body
+    assert "&lt;script&gt;" in body
+    assert "&lt;b&gt;bold&lt;/b&gt;" in body
+
+
+def test_a_crafted_slug_is_escaped_in_the_404(client: TestClient) -> None:
+    """The unknown-slug 404 echoes the slug back — it must not echo it raw."""
+    body = client.get("/device/%3Cscript%3E").text
+    assert "<script>" not in body
+    assert "&lt;script&gt;" in body
 
 
 def test_a_stale_replay_cannot_move_the_due_date_back(client: TestClient) -> None:

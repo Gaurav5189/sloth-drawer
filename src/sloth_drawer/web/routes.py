@@ -13,13 +13,14 @@ allowed to import ``storage``, ``render`` and ``errors`` (RULES.md 3.1a), so
 
 from __future__ import annotations
 
+import html
 import sqlite3
 from pathlib import Path
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from starlette.exceptions import HTTPException
-from starlette.status import HTTP_303_SEE_OTHER
+from starlette.status import HTTP_303_SEE_OTHER, HTTP_400_BAD_REQUEST
 
 import sloth_drawer.errors as errors
 from sloth_drawer.render.card_html import render_card
@@ -44,12 +45,20 @@ def build_router(db_path: Path, devices_toml: Path) -> APIRouter:
         return load_devices(devices_toml)
 
     def _row(connection: sqlite3.Connection, slug: str) -> sqlite3.Row:
-        """The device's stored row, or a 404 that says what to run first."""
+        """The device's stored row, or a 404 that says what to run first.
+
+        The slug travels in the URL and lands in the error page's HTML, so
+        it is escaped here — ``repr`` tames quotes, not angle brackets. The
+        ``<code>`` markup is static, never data.
+        """
         row = connection.execute("SELECT id FROM devices WHERE slug = ?", (slug,)).fetchone()
         if row is None:
             raise HTTPException(
                 status_code=NOT_FOUND,
-                detail=f"No scan data for {slug!r} yet. Run <code>sloth-drawer scan</code> first.",
+                detail=(
+                    f"No scan data for {html.escape(repr(slug))} yet. "
+                    "Run <code>sloth-drawer scan</code> first."
+                ),
             )
         return row
 
@@ -58,9 +67,10 @@ def build_router(db_path: Path, devices_toml: Path) -> APIRouter:
         for device in devices:
             if device.slug == slug:
                 return device
-        slugs = ", ".join(device.slug for device in devices)
+        slugs = ", ".join(html.escape(repr(device.slug)) for device in devices)
         raise HTTPException(
-            status_code=NOT_FOUND, detail=f"No device {slug!r} in the registry. Known: {slugs}."
+            status_code=NOT_FOUND,
+            detail=f"No device {html.escape(repr(slug))} in the registry. Known: {slugs}.",
         )
 
     @router.get("/", response_class=HTMLResponse)
@@ -119,12 +129,33 @@ def build_router(db_path: Path, devices_toml: Path) -> APIRouter:
         form parsing would add the ``python-multipart`` dependency for one
         integer, and the redirect-after-post keeps a browser refresh from
         double-logging.
+
+        Two guards before anything is written: the id must be a plain
+        integer (a missing or nonnumeric one is a client error, not a
+        traceback), and the interval must belong to *this* device's row —
+        a URL that pairs one device with another device's task id is
+        rejected, not silently recorded against the wrong card.
         """
         _device(_registry(), slug)
-        interval_id = int(request.query_params.get("interval_id", ""))
+        raw_interval = request.query_params.get("interval_id", "")
+        try:
+            interval_id = int(raw_interval)
+        except ValueError:
+            raise HTTPException(
+                status_code=HTTP_400_BAD_REQUEST,
+                detail="The interval id must be an integer.",
+            ) from None
         connection = open_db(db_path)
         try:
-            _row(connection, slug)
+            row = _row(connection, slug)
+            owner = connection.execute(
+                "SELECT device_id FROM intervals WHERE id = ?", (interval_id,)
+            ).fetchone()
+            if owner is not None and owner["device_id"] != row["id"]:
+                raise HTTPException(
+                    status_code=NOT_FOUND,
+                    detail=(f"Interval {interval_id} is not on {html.escape(repr(slug))}'s card."),
+                )
             record_done(
                 connection,
                 interval_id,
@@ -134,8 +165,6 @@ def build_router(db_path: Path, devices_toml: Path) -> APIRouter:
             raise HTTPException(status_code=NOT_FOUND, detail=str(exc)) from exc
         finally:
             connection.close()
-        return RedirectResponse(
-            f"/device/{slug}?logged=1", status_code=HTTP_303_SEE_OTHER
-        )
+        return RedirectResponse(f"/device/{slug}?logged=1", status_code=HTTP_303_SEE_OTHER)
 
     return router

@@ -54,6 +54,7 @@ uv run sloth-drawer card medify-ma-40     # print the card and write the A6 HTML
 uv run sloth-drawer done medify-ma-40 "Replace filters"   # log it; the due date recomputes
 uv run sloth-drawer report                # the accuracy table
 uv run sloth-drawer serve                 # the web demo: device list, card, mark-done (127.0.0.1:8000)
+# live demo: https://sloth-drawer.onrender.com/  (same surfaces, the scan's committed snapshot)
 ```
 
 A scan is **resumable**: each manual is written in its own transaction and checkpointed, so a run that

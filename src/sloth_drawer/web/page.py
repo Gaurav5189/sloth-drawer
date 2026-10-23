@@ -9,6 +9,7 @@ printable card can never drift apart (DESIGN.md 2).
 
 from __future__ import annotations
 
+import html
 from datetime import date
 
 from sloth_drawer.render.theme import FONTS, STATES, SURFACES, verdict_chip
@@ -156,13 +157,18 @@ footer {{ color: var(--ink-faint); font-size: 0.8125rem; margin-top: 2rem; }}
 
 
 def shell(title: str, body: str) -> str:
-    """One HTML document, tokens included, no network requests."""
+    """One HTML document, tokens included, no network requests.
+
+    ``title`` is escaped here — every caller builds it from dynamic text
+    (``device.name``, the error title). Body pages do their own escaping at
+    each insertion point instead, where the intent is known.
+    """
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{title}</title>
+<title>{html.escape(title)}</title>
 <style>{_css()}</style>
 </head>
 <body>
@@ -194,20 +200,23 @@ def device_list_page(
     """The front page: every device in the registry, scanned ones linked."""
     items = []
     for device, tasks, scanned in entries:
+        # Every dynamic value is escaped where it lands; the intentional
+        # markup (<code>sloth-drawer scan</code>) is static, never data.
+        slug_attr = html.escape(device.slug, quote=True)
         if scanned:
             text, klass = _due_tag(_soonest(tasks))
             tag = f'<span class="due-tag {klass}">{text}</span>'
             count = len([task for task in tasks if task.accepted])
             meta = f"{count} task{'s' if count != 1 else ''} on the card"
-            link = f'<a href="/device/{device.slug}">{device.name}</a>'
+            link = f'<a href="/device/{slug_attr}">{html.escape(device.name)}</a>'
         else:
             tag = '<span class="badge">not scanned</span>'
             meta = "run <code>sloth-drawer scan</code> first"
-            link = f"<strong>{device.name}</strong>"
+            link = f"<strong>{html.escape(device.name)}</strong>"
         items.append(
-            f"<li>{link}<span class=\"meta\">{device.subtitle} · {meta}</span>{tag}</li>"
+            f'<li>{link}<span class="meta">{html.escape(device.subtitle)} · {meta}</span>{tag}</li>'
         )
-    listing = "<ul class=\"device-list\">" + "\n".join(items) + "</ul>" if items else ""
+    listing = '<ul class="device-list">' + "\n".join(items) + "</ul>" if items else ""
     body = f"""<main class="wrap">
 <p class="eyebrow">Sloth Drawer</p>
 <h1>The drawer</h1>
@@ -228,6 +237,13 @@ def device_page(device: Device, tasks: list[TaskSchedule], flash: str = "") -> s
     items = []
     ordered = sorted(tasks, key=lambda task: (not task.accepted, task.task.lower()))
     for task in ordered:
+        # Manual-derived text (task, evidence, display) and registry text
+        # (name, subtitle) are escaped at each insertion point — the card
+        # renderer (render/card_html.py) does the same; the pages must not
+        # be the one hole in that boundary.
+        name = html.escape(task.task)
+        display = html.escape(task.display)
+        slug_attr = html.escape(device.slug, quote=True)
         if task.accepted:
             text, klass = _due_tag(task.next_due)
             last = (
@@ -237,49 +253,61 @@ def device_page(device: Device, tasks: list[TaskSchedule], flash: str = "") -> s
             )
             form = (
                 f'<form class="mark-done" method="post" '
-                f'action="/device/{device.slug}/done?interval_id={task.interval_id}">'
-                f"<button type=\"submit\">Mark done</button></form>"
+                f'action="/device/{slug_attr}/done?interval_id={task.interval_id}">'
+                f'<button type="submit">Mark done</button></form>'
             )
             disagree = (
-                f'<span class="disagree">{task.disagreement}</span>' if task.disagreement else ""
+                f'<span class="disagree">{html.escape(task.disagreement)}</span>'
+                if task.disagreement
+                else ""
             )
             due_row = (
                 f'<div class="due-row"><span class="due-text {klass}">'
                 f"{text}</span>{last}{form}{disagree}</div>"
             )
         else:
-            reason = task.reject_reason or "the manual states no verifiable interval"
+            reason = html.escape(task.reject_reason or "the manual states no verifiable interval")
             due_row = (
                 '<div class="due-row"><span class="badge">not on the card</span>'
                 f'<span class="interval">{reason}</span></div>'
             )
         evidence = (
-            f'<blockquote class="evidence">{task.evidence}</blockquote>' if task.evidence else ""
+            f'<blockquote class="evidence">{html.escape(task.evidence)}</blockquote>'
+            if task.evidence
+            else ""
         )
         chips = verdict_chip(task.verdict)
         items.append(
             f'<li class="task" id="{_TASK_ANCHOR}{task.interval_id}">'
             f'<div class="head"><span class="badge">{chips}</span>'
-            f'<p class="name">{task.task}</p><span class="interval">{task.display}</span></div>'
+            f'<p class="name">{name}</p><span class="interval">{display}</span></div>'
             f"{evidence}{due_row}</li>"
         )
     listing = '<ul class="tasks">' + "\n".join(items) + "</ul>" if items else ""
     notice = f'<p class="flash" role="status">{flash}</p>' if flash else ""
+    eyebrow = html.escape((device.category or "device").replace("_", " ").replace("-", " "))
     body = f"""<main class="wrap">
 <nav class="crumbs"><a href="/">&larr; All devices</a></nav>
-<p class="eyebrow">{(device.category or "device").replace("_", " ").replace("-", " ")}</p>
-<h1>{device.name}</h1>
-<p class="subtitle">{device.subtitle}</p>
+<p class="eyebrow">{eyebrow}</p>
+<h1>{html.escape(device.name)}</h1>
+<p class="subtitle">{html.escape(device.subtitle)}</p>
 <hr class="rule">
 {notice}
-<p><a class="card-link" href="/device/{device.slug}/card">Open the printable card &rarr;</a></p>
+<p><a class="card-link" href="/device/{slug_attr}/card">Open the printable card &rarr;</a></p>
 {listing}
 </main>"""
     return shell(f"{device.name} — Sloth Drawer", body)
 
 
 def error_page(code: int, title: str, detail: str) -> str:
-    """Every handled failure lands here: a word to the user, not an imprimis."""
+    """Every handled failure lands here: a word to the user, not an imprimis.
+
+    ``detail`` arrives **pre-escaped for its dynamic parts** (routes.py
+    escapes slugs and other request data at construction) because the handled
+    messages may carry intentional markup such as ``<code>``. Only audited
+    code paths may build a detail; nothing request-supplied reaches this
+    point raw.
+    """
     body = f"""<main class="wrap">
 <p class="code">HTTP {code}</p>
 <h1>{title}</h1>

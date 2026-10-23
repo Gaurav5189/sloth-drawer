@@ -1,9 +1,9 @@
 # Project Index & Map
 
 ## Active State
-- **Current Phase:** Phase 4 — Surface & partner categories → **backend, parity diff, web UI complete** (2026-10-23); category list **finalised** (Gemma, Tiger Data, Render, Sentry, Entire/DEV; `.tech` and TabPFN dropped by decision). Only the Render deploy itself remains
-- **Current Task:** the human runs the Render Blueprint deploy (`DOCS/DEPLOY.md`); then Phase 5 (demo recording, Sentry screenshot, the post draft)
-- **Blocked:** the Sentry trace screenshot needs a real `SLOTH_SENTRY_DSN` (Phase 5); the Render deploy needs the user's Render account. Evidence so far: live Tiger index 1323/1325 chunk writes (1305 distinct rows; 2 index_failed, recorded); parity run 4/4 PARITY (`out/parity-run.txt`); web UI serves the exact CLI card; deploy assets + seed built; 297 tests green
+- **Current Phase:** Phase 4 — Surface & partner categories → **complete** (2026-10-23). Live URL: https://sloth-drawer.onrender.com/ (free plan, Containerfile, no env vars needed). Category list finalised: Gemma, Tiger Data, Render, Sentry, Entire/DEV (`.tech` and TabPFN dropped by decision)
+- **Current Task:** Phase 5 — record the demo, the Sentry trace screenshot (needs a real `SLOTH_SENTRY_DSN`), the post draft (PLAN.md §5), the embedded agent session. Draft only, human reviews before publishing
+- **Evidence:** live Tiger index 1323/1325 chunk writes (1305 distinct rows; 2 index_failed, recorded); parity run 4/4 PARITY (`out/parity-run.txt`); web UI byte-identical to the CLI card; live URL serving real due dates; 297 tests green
 
 ## Doc Map
 > **Restructure applied at kickoff (2026-10-22).** The docs now live in `DOCS/` and `MEMORY.md` lives
