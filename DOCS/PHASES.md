@@ -197,14 +197,22 @@ Sentry trace screenshot (needs a real DSN) and the backend parity run (needs the
 - [x] **Backend parity run** (the Phase 3 deferred task) — `bench/parity.py` over the live corpus,
       4/4 queries PARITY under the window invariant (every local top-5 chunk reachable in the cloud
       top-20; ranks differ on purpose — RRF fusion vs strict-conjunctive FTS5). Output: `out/parity-run.txt`
-- [ ] (~45 min) Deploy to **Render**; verify the cold start works, because the free tier sleeps
-- [ ] (~15 min) Claim the free **`.tech`** domain (`hacktoberfest.com/my/promos`) and point it at the demo
-- [ ] (~15 min) Optional: TabPFN forecast of annual service spend from your own history (**TabPFN** category) — stretch
-- [ ] (~10 min) Confirm which categories you are actually entering; write the list down for the post
+- [ ] (~45 min) Deploy to **Render** — assets ready (`deploy/render.yaml`, `deploy/Containerfile`,
+      `deploy/build-seed.sh`, `src/sloth_drawer/webapp.py` ASGI entry, `DOCS/DEPLOY.md`); the human
+      runs the Blueprint deploy from their Render account. **STATE SHIPS IN THE IMAGE**: run
+      deploy/build-seed.sh, commit deploy/seed/sloth.db, push. No DSN, no PDFs, no model in the deploy
+- [x] ~~Claim the free **`.tech`** domain~~ — **dropped by decision (2026-10-23)**: the user will
+      not use a `.tech` domain on this project; the demo URL is the Render `onrender.com` URL
+- [x] Optional: TabPFN forecast — **skipped by decision**; the demo stays honest without a paid
+      model dependency
+- [x] (~10 min) Category list finalised and written down for the post. **Gemma** (the whole
+      extraction/verification stack, local Ollama), **Tiger Data** (the cloud retrieval backend +
+      the parity run), **Render** (the deploy), **Sentry** (verified tracing, Phase 5 screenshot),
+      **Entire/DEV** (the post + embedded agent session). `.tech` dropped by decision
 
 ### Exit criteria
-- [ ] A live URL renders a device and its card
-- [ ] The category list is finalised and defensible — every entry genuinely used
+- [ ] A live URL renders a device and its card (deploy pending — everything else is ready)
+- [x] The category list is finalised and defensible — every entry genuinely used. **Done.**
 
 ---
 

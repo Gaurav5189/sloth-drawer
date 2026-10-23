@@ -1,0 +1,58 @@
+# The deploy image: a read-only web surface over a pre-scanned state snapshot.
+# (Containerfile — built with Podman on the author's machine; Render's blue
+# green build runs the SAME instructions server-side, and `podman build` works
+# locally as the pre-ship check.)
+#
+# The container carries NO model and makes NO model call: the web surface is
+# served from the same `out/sloth.db` a local scan wrote (deploy/render.yaml
+# points uvicorn at `sloth_drawer.webapp:app`). That is what makes a
+# free-tier cold start boot in seconds, and it is also the privacy boundary —
+# the DSN lives in no environment variable at all: the web surface reads the
+# local snapshot only.
+#
+# Build context: the repository root, AFTER deploy/build-seed.sh has refreshed
+# deploy/seed/sloth.db from your local scan:
+#
+#   deploy/build-seed.sh && podman build -f deploy/Containerfile -t sloth-drawer .
+
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS build
+
+WORKDIR /app
+ENV UV_LINK_MODE=copy UV_COMPILE_BYTECODE=1 UV_PYTHON_DOWNLOADS=never
+
+COPY pyproject.toml uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-install-project --no-group dev
+
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+
+WORKDIR /app
+ENV UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never PATH="/app/.venv/bin:$PATH"
+ENV SLOTH_HOME=/app
+
+# The hand-edited registry. The manuals are NOT in the image (RULES.md:
+# the PDFs are not ours to redistribute) — the scan ran on the author's
+# machine, and the container serves its verified result.
+COPY data /app/data
+
+# The demo state: the scan's committed SQLite snapshot. Owned by the runtime
+# user — SQLite opens the file for writing (WAL mode creates -wal/-shm
+# sidecars even for readers) and the container runs as uid 1000.
+RUN mkdir -p /app/out && chown 1000:1000 /app/out
+COPY --chown=1000:1000 deploy/seed/sloth.db /app/out/sloth.db
+
+COPY --from=build /app/.venv /app/.venv
+COPY src /app/src
+COPY README.md LICENSE pyproject.toml uv.lock ./
+
+# Installs the project itself into the synced venv (no network beyond uv's cache).
+RUN uv sync --frozen --no-group dev --no-editable
+
+EXPOSE 8000
+USER 1000
+
+# Liveness is the platform's health check against /health (see render.yaml
+# healthCheckPath) — a Dockerfile HEALTHCHECK is ignored by OCI builds and
+# double-bookkeeping would be worse than none.
+
+CMD ["uvicorn", "sloth_drawer.webapp:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,0 +1,21 @@
+services:
+  # The web demo: a card viewer + mark-done over the scan snapshot.
+  # Docker runtime — the state file ships with the image, because a free-tier
+  # deploy has no persistent disk across deploys and cold starts.
+  #
+  # Note the web surface reads `out/sloth.db` only: it never calls the model
+  # and never needs the Tiger DSN, so the deploy has **no** secrets in it.
+  # The hybrid Tiger backend is demonstrated from the CLI / the parity run.
+  # The author builds with Podman locally; Render's server-side build runs
+  # the identical instructions from deploy/Containerfile.
+  - type: web
+    name: sloth-drawer
+    runtime: docker          # Render's key name for "build from Containerfile"
+    dockerfilePath: ./deploy/Containerfile
+    plan: free
+    healthCheckPath: /health
+    autoDeploy: true
+
+  # Cold start: the instance sleeps after ~15 min idle; the first request
+  # pays a container boot (~10-20 s). /health bypasses state so platform
+  # probes never flap. Nothing in the boot path is model-bound.

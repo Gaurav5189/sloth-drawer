@@ -52,9 +52,11 @@ No device names, no serial numbers, no purchase dates, no service history.
 | Best Use of Render | $200 | deploy the web UI | ~1.5 h |
 | Best Use of Sentry Agent Tracing | $100 | per-stage spans, latency, tokens, cost | ~1.5 h |
 | Best Use of Entire | $100 | embed the DevRelay agent session | ~0.5 h |
-| Best Use of a .tech Domain | $100 | free first-year domain → the live demo | ~0.5 h |
 | Best Use of Tiger Data | $100 | **pgvector + `pg_textsearch` hybrid index over manual chunks on Tiger Cloud** | ~2 h |
 | Best Use of TabPFN | $200 | forecast filter-replacement spend from your own history | ~2 h (stretch) |
+
+> **Decision (2026-10-23):** `.tech` is dropped (no domain in this project). Final category list:
+> **Gemma, Tiger Data, Render, Sentry, Entire** — TabPFN stays a stretch.
 
 You can only win once per challenge. Enter the categories you genuinely use.
 
@@ -145,7 +147,7 @@ no `"or every 2 months"` / `"720 hours"` special cases. This is the single bigge
 
 ### Sun Oct 25 — Surface, deploy, write (≈7 h)
 - **1.5 h** FastAPI web UI (one page) — core dependency, but the **last** thing built.
-- **1 h** Deploy to Render; claim the free `.tech` domain; point it at the demo.
+- **1 h** Deploy to Render (assets in `deploy/`; see `DOCS/DEPLOY.md`). `.tech` domain dropped by decision (2026-10-23) — the demo URL is the Render URL.
 - **1 h** Record the demo (terminal + card + report). One take, no fluff.
 - **2.5 h** Write the post. **Writing Quality is the most heavily weighted criterion** — leave it alone
   until the code is frozen.

@@ -1,0 +1,214 @@
+{
+  "generated_at": "2026-10-23T07:45:28+00:00",
+  "model_id": "gemma3:1b",
+  "prompt_version": 1,
+  "backend": "local",
+  "manuals": 19,
+  "skipped_manuals": 0,
+  "chunks": 84,
+  "candidates": 63,
+  "found": 35,
+  "passed": 22,
+  "repaired": 13,
+  "rejected": 7,
+  "skipped": 21,
+  "seconds": 613.9893724819976,
+  "tokens": 22401,
+  "cost_usd": 0.0,
+  "rejection_reasons": {
+    "task_not_in_source": 7
+  },
+  "devices": [
+    {
+      "manual": "blueair-blue-pure-211a.pdf",
+      "device": "Blueair Blue Pure 211+ Auto",
+      "slug": "blueair-blue-pure-211a",
+      "candidates": 1,
+      "passed": 1,
+      "repaired": 0,
+      "rejected": 0,
+      "skipped": 0
+    },
+    {
+      "manual": "blueair-health-protect-7300.pdf",
+      "device": "Blueair HealthProtect 7300",
+      "slug": "blueair-health-protect-7300",
+      "candidates": 1,
+      "passed": 0,
+      "repaired": 0,
+      "rejected": 0,
+      "skipped": 1
+    },
+    {
+      "manual": "coway-airmega-100.pdf",
+      "device": "Coway Airmega 100",
+      "slug": "coway-airmega-100",
+      "candidates": 4,
+      "passed": 2,
+      "repaired": 0,
+      "rejected": 0,
+      "skipped": 2
+    },
+    {
+      "manual": "coway-airmega-400s.pdf",
+      "device": "Coway Airmega 400S",
+      "slug": "coway-airmega-400s",
+      "candidates": 6,
+      "passed": 2,
+      "repaired": 1,
+      "rejected": 1,
+      "skipped": 2
+    },
+    {
+      "manual": "honeywell-hpa3000.pdf",
+      "device": "Honeywell PowerPlus HPA3100",
+      "slug": "honeywell-hpa3000",
+      "candidates": 6,
+      "passed": 5,
+      "repaired": 0,
+      "rejected": 0,
+      "skipped": 1
+    },
+    {
+      "manual": "honeywell-hpa8350.pdf",
+      "device": "Honeywell HPA8350",
+      "slug": "honeywell-hpa8350",
+      "candidates": 5,
+      "passed": 3,
+      "repaired": 0,
+      "rejected": 0,
+      "skipped": 2
+    },
+    {
+      "manual": "honeywell-insight-hpa5100.pdf",
+      "device": "Honeywell InSight HPA5100",
+      "slug": "honeywell-insight-hpa5100",
+      "candidates": 6,
+      "passed": 4,
+      "repaired": 0,
+      "rejected": 0,
+      "skipped": 2
+    },
+    {
+      "manual": "levoit-core-200s-plus.pdf",
+      "device": "Levoit Core 200S Plus",
+      "slug": "levoit-core-200s-plus",
+      "candidates": 6,
+      "passed": 0,
+      "repaired": 1,
+      "rejected": 2,
+      "skipped": 3
+    },
+    {
+      "manual": "levoit-essential-200s.pdf",
+      "device": "Levoit Essential 200S",
+      "slug": "levoit-essential-200s",
+      "candidates": 3,
+      "passed": 1,
+      "repaired": 0,
+      "rejected": 0,
+      "skipped": 2
+    },
+    {
+      "manual": "medify-ma-112.pdf",
+      "device": "Medify MA-112",
+      "slug": "medify-ma-112",
+      "candidates": 4,
+      "passed": 0,
+      "repaired": 1,
+      "rejected": 0,
+      "skipped": 3
+    },
+    {
+      "manual": "medify-ma-14.pdf",
+      "device": "Medify MA-14",
+      "slug": "medify-ma-14",
+      "candidates": 3,
+      "passed": 0,
+      "repaired": 2,
+      "rejected": 0,
+      "skipped": 1
+    },
+    {
+      "manual": "medify-ma-25.pdf",
+      "device": "Medify MA-25",
+      "slug": "medify-ma-25",
+      "candidates": 3,
+      "passed": 0,
+      "repaired": 2,
+      "rejected": 0,
+      "skipped": 1
+    },
+    {
+      "manual": "medify-ma-40.pdf",
+      "device": "Medify MA-40",
+      "slug": "medify-ma-40",
+      "candidates": 2,
+      "passed": 2,
+      "repaired": 0,
+      "rejected": 0,
+      "skipped": 0
+    },
+    {
+      "manual": "winix-5500.pdf",
+      "device": "Winix 5500-2",
+      "slug": "winix-5500",
+      "candidates": 3,
+      "passed": 1,
+      "repaired": 1,
+      "rejected": 1,
+      "skipped": 0
+    },
+    {
+      "manual": "winix-6300.pdf",
+      "device": "Winix 6300-2",
+      "slug": "winix-6300",
+      "candidates": 3,
+      "passed": 0,
+      "repaired": 2,
+      "rejected": 0,
+      "skipped": 1
+    },
+    {
+      "manual": "winix-a230.pdf",
+      "device": "Winix A230/A231",
+      "slug": "winix-a230",
+      "candidates": 0,
+      "passed": 0,
+      "repaired": 0,
+      "rejected": 0,
+      "skipped": 0
+    },
+    {
+      "manual": "winix-am90.pdf",
+      "device": "Winix AM90",
+      "slug": "winix-am90",
+      "candidates": 3,
+      "passed": 1,
+      "repaired": 1,
+      "rejected": 1,
+      "skipped": 0
+    },
+    {
+      "manual": "winix-c545.pdf",
+      "device": "Winix C545",
+      "slug": "winix-c545",
+      "candidates": 3,
+      "passed": 0,
+      "repaired": 1,
+      "rejected": 2,
+      "skipped": 0
+    },
+    {
+      "manual": "winix-c610.pdf",
+      "device": "Winix C610",
+      "slug": "winix-c610",
+      "candidates": 1,
+      "passed": 0,
+      "repaired": 1,
+      "rejected": 0,
+      "skipped": 0
+    }
+  ],
+  "skipped_files": []
+}

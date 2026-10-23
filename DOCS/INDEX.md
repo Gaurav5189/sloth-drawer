@@ -1,9 +1,9 @@
 # Project Index & Map
 
 ## Active State
-- **Current Phase:** Phase 4 — Surface & partner categories → **backend, parity diff, web UI complete** (2026-10-23). Render deploy, `.tech` domain, category confirmation remain
-- **Current Task:** Phase 4 remainder — Render deploy (tolerate the free-tier cold start), `.tech` domain claim, finalise the category list; then Phase 5 (demo recording, Sentry screenshot, the post)
-- **Blocked:** the Sentry trace screenshot needs a real `SLOTH_SENTRY_DSN` (Phase 5); the Render deploy needs an account/token. Evidence so far: live Tiger index 1323/1325 chunks (2 index_failed, recorded); parity run 4/4 PARITY (`out/parity-run.txt`); web UI serves the exact CLI card; 297 tests green
+- **Current Phase:** Phase 4 — Surface & partner categories → **backend, parity diff, web UI complete** (2026-10-23); category list **finalised** (Gemma, Tiger Data, Render, Sentry, Entire/DEV; `.tech` and TabPFN dropped by decision). Only the Render deploy itself remains
+- **Current Task:** the human runs the Render Blueprint deploy (`DOCS/DEPLOY.md`); then Phase 5 (demo recording, Sentry screenshot, the post draft)
+- **Blocked:** the Sentry trace screenshot needs a real `SLOTH_SENTRY_DSN` (Phase 5); the Render deploy needs the user's Render account. Evidence so far: live Tiger index 1323/1325 chunk writes (1305 distinct rows; 2 index_failed, recorded); parity run 4/4 PARITY (`out/parity-run.txt`); web UI serves the exact CLI card; deploy assets + seed built; 297 tests green
 
 ## Doc Map
 > **Restructure applied at kickoff (2026-10-22).** The docs now live in `DOCS/` and `MEMORY.md` lives

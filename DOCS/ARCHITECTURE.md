@@ -404,13 +404,16 @@ similarity — RRF fuses **ranks**, not scores, which is the entire point of cho
 lazy so the package stays optional.
 
 ### 4.6 Deployment
-- **Render** (for the "Best Use of Render" category): the FastAPI app as a web service. Note that the
-  free tier sleeps — the demo should tolerate a cold start, or serve a pre-generated card set.
-- **`.tech` domain** (for the "Best Use of a .tech Domain" category): free first year via
-  `hacktoberfest.com/my/promos`, pointed at the Render deployment.
+- **Render** (for the "Best Use of Render" category): the FastAPI app as a web service, from
+  `deploy/render.yaml` (Docker runtime, free plan, `/health` liveness). The demo state (a scan's
+  SQLite snapshot) **ships in the image** via `deploy/build-seed.sh` — a free tier has no persistent
+  disk. Cold start is tolerated by design: the boot path reads one SQLite file, no model, no DSN.
+  See `DOCS/DEPLOY.md`.
+- **`.tech` domain — dropped by decision (2026-10-23).** The demo URL is the Render `onrender.com`
+  URL; the "Best Use of a .tech Domain" category is not entered.
 - **Tiger Cloud** (for the "Best Use of Tiger Data" category): the Postgres service holding the
-  `manual_chunks` table. The service URL comes from the console's *Download the config* file or from
-  `tiger db uri`; it is read from `SLOTH_DATABASE_URL` and never committed. The Tiger CLI is a
+  `sloth.manual_chunks` table. The service URL comes from `tiger db uri`; it is read from
+  `SLOTH_DATABASE_URL` and never committed. The Tiger CLI is a
   **developer convenience for provisioning only** — the application never shells out to it.
 
 ### 4.7 Explicitly not used
