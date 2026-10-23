@@ -1,8 +1,8 @@
 """The command line. The only place in the project that prints.
 
 Exit codes follow RULES.md 2.5: 0 success, 1 partial success (something was
-rejected or skipped), 2 fatal (configuration or Ollama unreachable, nothing
-written), 130 interrupted.
+rejected or skipped, or a card could not state an interval), 2 fatal
+(configuration or Ollama unreachable, nothing written), 130 interrupted.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import json
 import logging
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from sloth_drawer import __version__
 from sloth_drawer.config import Config, load_config
@@ -32,6 +33,9 @@ from sloth_drawer.models import (
 )
 
 LOGGER = logging.getLogger("sloth_drawer")
+
+if TYPE_CHECKING:  # pragma: no cover - import for the type checker only
+    from sloth_drawer.storage.db import Device
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -91,7 +95,40 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="how long Ollama keeps the model loaded (e.g. 5m, or 0 to unload)",
     )
+    scan.add_argument(
+        "--no-persist",
+        action="store_true",
+        help="do not write the intervals to the local database or the report",
+    )
     scan.set_defaults(handler=_cmd_scan)
+
+    card = subcommands.add_parser("card", help="print one device's card and write it as HTML")
+    card.add_argument("device", help="the device slug from data/devices.toml (or its name)")
+    card.add_argument("--ascii", action="store_true", help="ASCII box drawing and glyphs")
+    card.add_argument("--no-color", action="store_true", help="disable ANSI colour entirely")
+    card.add_argument(
+        "--out",
+        default=None,
+        help="where to write the HTML card (default: out/cards)",
+    )
+    card.set_defaults(handler=_cmd_card)
+
+    done = subcommands.add_parser(
+        "done", help="log that a task was done, and recompute the due date"
+    )
+    done.add_argument("device", help="the device slug from data/devices.toml (or its name)")
+    done.add_argument("task", help="the task, as it appears on the card")
+    done.add_argument(
+        "--date",
+        default=None,
+        help="the date it was done, in YYYY-MM-DD form (default: today)",
+    )
+    done.add_argument("--note", default=None, help="an optional note")
+    done.set_defaults(handler=_cmd_done)
+
+    report = subcommands.add_parser("report", help="print the accuracy table from the last scan")
+    report.add_argument("--json", action="store_true", help="print report.json instead")
+    report.set_defaults(handler=_cmd_report)
 
     return parser
 
@@ -100,6 +137,7 @@ def _cmd_scan(args: argparse.Namespace, config: Config) -> int:
     """Read a folder of manuals and print every interval the verifier accepted."""
     from sloth_drawer.models import check_ollama
     from sloth_drawer.pipeline import scan_corpus
+    from sloth_drawer.storage.db import load_devices, manual_index
 
     directory = Path(args.directory)
     if not directory.is_dir():
@@ -109,6 +147,17 @@ def _cmd_scan(args: argparse.Namespace, config: Config) -> int:
     # not a batch of REJECT model_timeout rows.
     check_ollama(config.ollama_host)
 
+    devices: tuple[Device, ...] = ()
+    slugs: dict[str, str] = {}
+    if config.paths.devices_toml.is_file():
+        devices = load_devices(config.paths.devices_toml)
+        slugs = manual_index(devices)
+    else:
+        LOGGER.warning(
+            "no device registry at %s; manuals are read but nothing is stored",
+            config.paths.devices_toml,
+        )
+
     result = scan_corpus(
         directory,
         config=config,
@@ -116,6 +165,7 @@ def _cmd_scan(args: argparse.Namespace, config: Config) -> int:
         triage_model=args.triage_model,
         use_triage=args.triage,
         threshold=args.threshold,
+        slugs=slugs,
         keep_alive=args.keep_alive,
     )
 
@@ -160,9 +210,252 @@ def _cmd_scan(args: argparse.Namespace, config: Config) -> int:
     )
     print(f"Retries: {sum(c.retries for c in result.candidates)}")
 
+    if not args.no_persist and devices:
+        _persist(result, devices, config, model=args.model)
+
     if rejected or result.skipped:
         return EXIT_PARTIAL
     return EXIT_OK
+
+
+def _persist(result, devices, config: Config, *, model: str) -> None:
+    """Store the intervals and the run, then write the report.
+
+    Every write is idempotent, so a re-scan of the same manual updates the rows
+    in place rather than duplicating them.
+    """
+    from sloth_drawer.extract.prompts import PROMPT_VERSION
+    from sloth_drawer.report.build import from_scan, write_report
+    from sloth_drawer.storage.db import (
+        RunRecord,
+        now_iso,
+        open_db,
+        record_run,
+        upsert_device,
+        upsert_interval,
+    )
+
+    connection = open_db(config.paths.db)
+    stored = 0
+    try:
+        ids = {device.slug: upsert_device(connection, device) for device in devices}
+        for candidate in result.candidates:
+            device_id = ids.get(candidate.manual_slug)
+            if device_id is None:
+                continue
+            if candidate.status == "SKIP":
+                # A triage "no" is not a fact about the manual; it is not stored.
+                continue
+            stored += 1
+            upsert_interval(
+                connection,
+                device_id,
+                task=candidate.task,
+                section=candidate.section,
+                page=candidate.page,
+                interval_months=candidate.verdict.interval_months,
+                model_interval_months=candidate.verdict.model_interval_months,
+                evidence=candidate.verdict.evidence,
+                model_quote=candidate.quote or candidate.verdict.model_quote,
+                verdict=candidate.verdict.status,
+                reject_reason=candidate.verdict.reason,
+                model_id=candidate.model_id,
+                prompt_hash=str(PROMPT_VERSION),
+            )
+        counts = result.counts()
+        record_run(
+            connection,
+            RunRecord(
+                started_at=now_iso(),
+                finished_at=now_iso(),
+                model_id=model,
+                backend=config.retrieval,
+                manuals=len(result.manuals),
+                chunks=result.chunks,
+                candidates=len(result.candidates),
+                found=counts.get("PASS", 0) + counts.get("REPAIR", 0),
+                passed=counts.get("PASS", 0),
+                repaired=counts.get("REPAIR", 0),
+                rejected=counts.get("REJECT", 0),
+                seconds=result.seconds,
+                tokens=result.tokens,
+            ),
+        )
+    finally:
+        connection.close()
+
+    report = from_scan(
+        result,
+        devices,
+        model_id=model,
+        backend=config.retrieval,
+        prompt_version=PROMPT_VERSION,
+    )
+    json_path, md_path = write_report(report, config.paths)
+    print()
+    print(f"Stored {stored} intervals in {config.paths.db}")
+    print(f"Report: {json_path} · {md_path}")
+
+
+def _cmd_card(args: argparse.Namespace, config: Config) -> int:
+    """Print one device's card and write the printable HTML beside it."""
+    from sloth_drawer.render import card_filename, render_card_html, render_card_text
+    from sloth_drawer.storage.service_log import schedule_for_device
+
+    device = _resolve_device(args.device, config)
+    connection = _open_state(config)
+    try:
+        row = _device_row(connection, device.slug)
+        tasks = schedule_for_device(connection, int(row["id"]))
+    finally:
+        connection.close()
+
+    from sloth_drawer.render import theme
+
+    color = theme.supports_color(sys.stdout, disabled=args.no_color)
+    print(render_card_text(device, tasks, color=color, ascii_only=args.ascii), end="")
+
+    out_dir = Path(args.out) if args.out else config.paths.cards
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        path = out_dir / card_filename(device)
+        path.write_text(render_card_html(device, tasks), encoding="utf-8")
+    except OSError as exc:
+        raise ConfigError(f"Could not write the card: {exc}") from exc
+    print(f"\nHTML card: {path}")
+
+    return EXIT_OK if any(task.accepted for task in tasks) else EXIT_PARTIAL
+
+
+def _cmd_done(args: argparse.Namespace, config: Config) -> int:
+    """Log a service event and recompute the due date in code."""
+    from sloth_drawer.storage.service_log import (
+        format_date,
+        last_done,
+        next_due,
+        parse_date,
+        record_done,
+        schedule_for_device,
+    )
+
+    device = _resolve_device(args.device, config)
+    connection = _open_state(config)
+    try:
+        row = _device_row(connection, device.slug)
+        tasks = [task for task in schedule_for_device(connection, int(row["id"])) if task.accepted]
+        if not tasks:
+            raise ConfigError(f"{device.name} has no verified interval to log a service against.")
+        match = _match_task(tasks, args.task)
+        recorded = record_done(
+            connection,
+            match.interval_id,
+            done_at=parse_date(args.date),
+            note=args.note,
+        )
+        # The schedule runs from the *latest* service, which is not necessarily
+        # the one just logged: an older date must not move the due date back.
+        effective = last_done(connection, match.interval_id) or recorded
+    finally:
+        connection.close()
+
+    due = next_due(effective, match.interval_months)
+    print(f"Recorded {format_date(recorded)}: {device.name} — {match.task}")
+    if effective != recorded:
+        print(f"Latest service on record is {format_date(effective)}; the schedule uses that.")
+    if due is None:
+        print("No interval to schedule from; the card will show no due date.")
+    else:
+        print(f"Next due {format_date(due)} (every {match.display})")
+    return EXIT_OK
+
+
+def _cmd_report(args: argparse.Namespace, config: Config) -> int:
+    """Print the accuracy table from the last scan."""
+    from sloth_drawer.report.build import load_report
+
+    report = load_report(config.paths.report_json)
+    if args.json:
+        print(report.to_json(), end="")
+    else:
+        print(report.table())
+    if report.rejected or report.skipped_manuals:
+        return EXIT_PARTIAL
+    return EXIT_OK
+
+
+def _resolve_device(key: str, config: Config):
+    """Find a device by slug or by name.
+
+    A slug is exact. A name is matched case-insensitively, and then as a unique
+    substring, so ``hpa3000`` finds ``honeywell-hpa3000`` but an ambiguous
+    fragment is an error rather than a guess.
+    """
+    from sloth_drawer.storage.db import load_devices
+
+    devices = load_devices(config.paths.devices_toml)
+    lowered = key.strip().lower()
+
+    for device in devices:
+        if device.slug == key:
+            return device
+    for device in devices:
+        if device.name.lower() == lowered:
+            return device
+
+    matches = [
+        device
+        for device in devices
+        if lowered in device.slug.lower() or lowered in device.name.lower()
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    if not matches:
+        raise ConfigError(
+            f"No device matches {key!r}. Known devices: "
+            + ", ".join(device.slug for device in devices)
+        )
+    raise ConfigError(f"{key!r} is ambiguous: " + ", ".join(device.slug for device in matches))
+
+
+def _match_task(tasks, key: str):
+    """Find one task on a card by name.
+
+    Exact match first, then a unique substring. A task that cannot be resolved
+    is an error listing the card's tasks, never a guess about which filter the
+    user meant.
+    """
+    lowered = key.strip().lower()
+    for task in tasks:
+        if task.task.lower() == lowered:
+            return task
+    matches = [task for task in tasks if lowered in task.task.lower()]
+    if len(matches) == 1:
+        return matches[0]
+    if not matches:
+        raise ConfigError(
+            f"No task matches {key!r} on this device. Known tasks: "
+            + "; ".join(task.task for task in tasks)
+        )
+    raise ConfigError(f"{key!r} is ambiguous: " + "; ".join(task.task for task in matches))
+
+
+def _device_row(connection, slug: str):
+    """The device's stored row, or an explanation of what to run first."""
+    row = connection.execute("SELECT id FROM devices WHERE slug = ?", (slug,)).fetchone()
+    if row is None:
+        raise ConfigError(f"No scan data for {slug!r} yet. Run `sloth-drawer scan <dir>` first.")
+    return row
+
+
+def _open_state(config: Config):
+    """Open the database the last scan wrote, or explain what to run first."""
+    from sloth_drawer.storage.db import open_db
+
+    if not config.paths.db.is_file():
+        raise ConfigError(
+            f"No scan data at {config.paths.db}. Run `sloth-drawer scan <dir>` first."
+        )
+    return open_db(config.paths.db)
 
 
 def _cmd_models(args: argparse.Namespace, config: Config) -> int:

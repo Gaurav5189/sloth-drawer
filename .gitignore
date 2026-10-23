@@ -2,6 +2,7 @@
 data/manuals/*
 !data/manuals/.gitkeep
 MEMORY.md
+.backboard/
 
 # --- generated output ---
 out/

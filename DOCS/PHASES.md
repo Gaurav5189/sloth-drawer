@@ -97,32 +97,36 @@
 
 ## Phase 2 — State, cards, and the report
 **Goal:** the tangible artifact — a printable card per device — and the table that goes in the post.
-**Estimate:** ~4.5 h · **Deadline:** Sat 24 Oct, evening
+**Estimate:** ~4.5 h · **Deadline:** Sat 24 Oct, evening · **Status: complete (2026-10-23)**
 
 ### Tasks
-- [ ] (~1 h) `storage/db.py` — schema from `ARCHITECTURE.md` §5, WAL mode, `foreign_keys=ON`,
+- [x] (~1 h) `storage/db.py` — schema from `ARCHITECTURE.md` §5, WAL mode, `foreign_keys=ON`,
       numbered migrations, `INSERT ... ON CONFLICT DO UPDATE` so re-scans are idempotent
-- [ ] (~30 min) `storage/service_log.py` — `record_done()`, `last_done()`,
+- [x] (~30 min) `storage/service_log.py` — `record_done()`, `last_done()`,
       `next_due = last_done + interval_months` (**computed at read time, never stored from a model output**),
-      the `never recorded` state
-- [ ] (~30 min) `data/devices.toml` — the device registry: slug, name, manufacturer, model, category,
-      manual filename
-- [ ] (~30 min) `render/theme.py` — the palette and type tokens from `DESIGN.md`, shared by both renderers
-- [ ] (~1 h) `render/card_html.py` — the A6 print card per `DESIGN.md`: hero interval, task list,
+      the `never recorded` state — *plus calendar-correct month arithmetic (31 Jan + 1 month = 28 Feb) and
+      the manufacturer's own unit recovered from the verified evidence sentence*
+- [x] (~30 min) `data/devices.toml` — the device registry: slug, name, manufacturer, model, category,
+      manual filename — *already written in Phase 1; read with stdlib `tomllib` in `storage/db.py`*
+- [x] (~30 min) `render/theme.py` — the palette and type tokens from `DESIGN.md`, shared by both renderers
+      — *plus the verdict glyphs, the terminal 256-colour palette, and `to_ascii`*
+- [x] (~1 h) `render/card_html.py` — the A6 print card per `DESIGN.md`: hero interval, task list,
       evidence quote, page citation, next-due date, REPAIR footnote. Print CSS, **no web fonts, no CDN**
-- [ ] (~45 min) `render/card_text.py` — the 80-column terminal card; ASCII-only fallback on `--ascii`
-- [ ] (~45 min) `report/build.py` — `report.json` + `report.md`: manuals, chunks, candidates, found,
+      — *a single file; a test asserts there is no `<script>`, `@font-face` or URL in it*
+- [x] (~45 min) `render/card_text.py` — the 80-column terminal card; ASCII-only fallback on `--ascii`
+      — *exactly 80 columns in both modes, pinned by tests*
+- [x] (~45 min) `report/build.py` — `report.json` + `report.md`: manuals, chunks, candidates, found,
       passed, repaired, rejected, seconds, tokens, cost, and the per-reason rejection breakdown
-- [ ] (~30 min) `cli.py` — `scan` / `card` / `done` / `report` / `models` subcommands, exit codes from
-      `RULES.md` §2.5
-- [ ] (~30 min) `tests/test_service_log.py`, `tests/test_cards.py`, `tests/test_report.py`
+- [x] (~30 min) `cli.py` — `scan` / `card` / `done` / `report` / `models` subcommands, exit codes from
+      `RULES.md` §2.5 — *`scan` persists the intervals and writes the report*
+- [x] (~30 min) `tests/test_service_log.py`, `tests/test_cards.py`, `tests/test_report.py`
 
 ### Exit criteria
-- [ ] `sloth-drawer card <device>` writes a print-ready HTML card and a terminal card
-- [ ] `sloth-drawer done <device> "<task>"` updates the card's next-due date **in code**
-- [ ] `sloth-drawer report` prints the accuracy table
-- [ ] A card for a device with nothing verified shows an explicit "interval not found" — never a blank card
-- [ ] `MEMORY.md` updated
+- [x] `sloth-drawer card <device>` writes a print-ready HTML card and a terminal card
+- [x] `sloth-drawer done <device> "<task>"` updates the card's next-due date **in code**
+- [x] `sloth-drawer report` prints the accuracy table
+- [x] A card for a device with nothing verified shows an explicit "interval not found" — never a blank card
+- [x] `MEMORY.md` updated
 
 ---
 

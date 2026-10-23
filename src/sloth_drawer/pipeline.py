@@ -73,6 +73,8 @@ class ScanResult:
     seconds: float = 0.0
     tokens: int = 0
     model_calls: int = 0
+    #: Chunks that scored high enough in the pre-filter to reach the model.
+    chunks: int = 0
 
     @property
     def accepted(self) -> list[Candidate]:
@@ -107,6 +109,14 @@ def _page_texts(manual: Manual) -> dict[int, str]:
     return {page.number: page.text for page in manual.pages}
 
 
+@dataclass
+class ManualScan:
+    """One manual's candidates, plus how many chunks were worth asking about."""
+
+    candidates: list[Candidate] = field(default_factory=list)
+    chunks: int = 0
+
+
 def scan_manual(
     manual: Manual,
     *,
@@ -116,14 +126,16 @@ def scan_manual(
     use_triage: bool = False,
     threshold: int = prefilter.DEFAULT_THRESHOLD,
     keep_alive: str | int | None = None,
-) -> list[Candidate]:
+) -> ManualScan:
     """Read one manual and return a candidate per model answer."""
     candidates: list[Candidate] = []
+    chunks = 0
     pages = _page_texts(manual)
 
     for chunk in chunk_manual(manual.pages):
         if not prefilter.is_candidate(chunk.text, threshold):
             continue
+        chunks += 1
         for excerpt in candidate_excerpts(chunk):
             if use_triage and triage_model:
                 # The gate is an optimisation, not a decision. If the small
@@ -248,7 +260,7 @@ def scan_manual(
                     retries=extraction.retries,
                 )
             )
-    return candidates
+    return ManualScan(candidates=candidates, chunks=chunks)
 
 
 def scan_corpus(
@@ -287,14 +299,16 @@ def scan_corpus(
             threshold=threshold,
             keep_alive=keep_alive,
         )
-        result.candidates.extend(candidates)
-        result.tokens += sum(candidate.tokens for candidate in candidates)
-        result.model_calls += len(candidates)
+        result.candidates.extend(candidates.candidates)
+        result.chunks += candidates.chunks
+        result.tokens += sum(candidate.tokens for candidate in candidates.candidates)
+        result.model_calls += len(candidates.candidates)
 
     result.seconds = time.monotonic() - started
     LOGGER.info(
-        "scan finished: %d manuals, %d candidates, %d tokens, %.1fs",
+        "scan finished: %d manuals, %d chunks, %d candidates, %d tokens, %.1fs",
         len(result.manuals),
+        result.chunks,
         len(result.candidates),
         result.tokens,
         result.seconds,
@@ -302,4 +316,11 @@ def scan_corpus(
     return result
 
 
-__all__ = ["Candidate", "ScanResult", "scan_corpus", "scan_manual", "PROMPT_VERSION"]
+__all__ = [
+    "Candidate",
+    "ManualScan",
+    "ScanResult",
+    "scan_corpus",
+    "scan_manual",
+    "PROMPT_VERSION",
+]

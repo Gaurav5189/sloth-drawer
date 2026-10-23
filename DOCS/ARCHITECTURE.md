@@ -454,6 +454,7 @@ CREATE TABLE runs (
   started_at    TEXT NOT NULL,
   finished_at   TEXT,
   model_id      TEXT,
+  backend       TEXT,                       -- the *configured* retriever (local | tiger)
   manuals       INTEGER, chunks INTEGER, candidates INTEGER,
   found INTEGER, passed INTEGER, repaired INTEGER, rejected INTEGER,
   seconds REAL, tokens INTEGER, cost_usd REAL DEFAULT 0

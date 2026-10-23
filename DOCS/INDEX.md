@@ -1,9 +1,9 @@
 # Project Index & Map
 
 ## Active State
-- **Current Phase:** Phase 2 — Cards, state, and the report (Phase 1 complete)
-- **Current Task:** Build `storage/` → `render/` → `report/` → the `card`/`done`/`report` subcommands
-- **Blocked:** none. Corpus scanned, 63 candidates with verified page citations, `out/scan-phase1.txt` saved
+- **Current Phase:** Phase 3 — Batch, tracing, and the offline proof (Phase 2 complete)
+- **Current Task:** the batch runner, `observability/sentry.py`, the offline proof, the backend parity run, `README.md`
+- **Blocked:** none. Corpus scanned (19 manuals), `out/report.md` written, cards render
 
 ## Doc Map
 > **Restructure applied at kickoff (2026-10-22).** The docs now live in `DOCS/` and `MEMORY.md` lives
